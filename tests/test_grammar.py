@@ -222,5 +222,26 @@ check("a voice reference doesn't make the line a cue", "<Subject 1> (S1), in the
 t, e = joni(">> @joni(s) says {{Hello.}} @ben says {{Hi!}}")
 check("explicit and automatic speakers mix", "<Subject 2> (S2) says" in t and not e, (t, e))
 
+# 7. keep_these / ignore_these and descriptions
+def picked(r, kept, ignored):
+    return dict(r, keep_these=kept, ignore_these=ignored)
+
+BED = [picked(ref("image", "character", "joni", "A young woman in pink pyjamas"), ["face", "hair", "clothing"], ["background"]),
+       picked(ref("image", "staging layout", "bed", "The bedroom with @joni in bed", keep="partially_preserved", shots="1",
+                  what_is_kept="she wears pyjamas, not the nightie."), ["subject positions", "camera angle"], ["clothing"])]
+t, i = build(refs=BED, summary="@joni wakes.", shots="Realistic.\n>> @joni sleeps in @bed.", soundscape="")
+check("description article is lower-cased", "<Subject 1> is a young woman in pink pyjamas," in t
+      and "showing the bedroom with <Subject 1> in bed." in t, t)
+check("subject picks", "fully_preserved - the face, hair and clothing are kept; the background is not taken from <Picture 1>." in t, t)
+check("layout picks name the subjects and keep what_is_kept",
+      "partially_preserved - the subject positions and camera angle are kept; the subjects' clothing is not taken from "
+      "<Picture 2>; each subject looks as its own reference shows; she wears pyjamas, not the nightie." in t, t)
+t, i = build(refs=[BED[0], picked(BED[1], ["camera angle"], []) | {"what_is_kept": ""}], summary="@joni wakes.",
+             shots="Realistic.\n>> @joni sleeps in @bed.", soundscape="")
+check("picks stop the empty what_is_kept warning", not levels(i, WARN), i)
+t, i = build(refs=[ref("image", "character", "Anna", "Anna Berg, a tall woman")], summary="@anna waves.",
+             shots="Real.\n>> @anna waves.", soundscape="")
+check("a name keeps its capital", "<Subject 1> is Anna Berg, a tall woman," in t, t)
+
 print("\n%d failure(s)" % fails)
 sys.exit(1 if fails else 0)

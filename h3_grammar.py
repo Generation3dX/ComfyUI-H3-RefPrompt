@@ -55,6 +55,12 @@ ASSET_ASPECTS = {
     "continue from": "the subjects, setting and motion at the end of the source video",
 }
 
+# picked in the image and video reference nodes as keep_these / ignore_these
+IMAGE_ASPECTS = ["face", "hair", "body", "clothing", "accessories", "pose", "subject positions", "camera angle",
+                 "background", "lighting", "colours", "style"]
+VIDEO_ASPECTS = IMAGE_ASPECTS + ["motion", "camera movement", "timing"]
+APPEARANCE = ["face", "hair", "body", "clothing"]
+
 # markers whose default retention line can't say what is kept or what changes
 VAGUE_MARKERS = {"partially_preserved", "attribute_transfer", "weak_reference", "partially_copy"}
 
@@ -397,15 +403,33 @@ def compile_prompt(refs, summary: str, shots: str, soundscape: str, music: str, 
         dd_lines.append(f"[Shot {i}] {stamp}{body}")
 
     def notes(e, default):
-        if e["what_is_kept"].strip():
-            return ctx.expand(_one_line(e["what_is_kept"]), "retention_analysis")
+        def are(aspects):
+            return "are" if len(aspects) > 1 or aspects[0].endswith("s") else "is"
+        kept, ignored = e.get("keep_these", []), e.get("ignore_these", [])
+        parts = []
+        if kept:
+            parts.append(f"the {_join(kept)} {are(kept)} kept")
+        if ignored:
+            people = e["role"] not in ("character", "outfit") and set(APPEARANCE) & set(ignored)
+            whose = "the subjects' " if people else "the "
+            parts.append(f"{whose}{_join(ignored)} {are(ignored)} not taken from {e['label']}")
+            if people:
+                parts.append("each subject looks as its own reference shows")
+        written = ctx.expand(_one_line(e["what_is_kept"]), "retention_analysis")
+        if parts:
+            return "; ".join(parts + [written.rstrip(".")] * bool(written)) + "."
+        if written:
+            return written
         if e["keep"] in VAGUE_MARKERS and not (e["kind"] == "audio" and e["keep"] == "weak_reference"):
-            issues.append(Issue(WARN, "retention_analysis", f"'{e['name']}' is {e['keep']} but what_is_kept is empty, so "
-                                                            f"the line only says '{default}' Say what is kept and what changes."))
+            issues.append(Issue(WARN, "retention_analysis", f"'{e['name']}' is {e['keep']} but nothing says what is kept, so "
+                                                            f"the line only says '{default}' Pick keep_these / ignore_these "
+                                                            "or fill in what_is_kept."))
         return default
 
     def desc(e, section="subject_definitions"):
-        return ctx.expand(_one_line(e["description"]).rstrip("."), section)
+        d = ctx.expand(_one_line(e["description"]).rstrip("."), section)
+        # it follows 'is' or 'showing', so 'A young woman' becomes 'a young woman'; names keep their capital
+        return re.sub(r"^(A|An|The)\b", lambda m: m.group(1).lower(), d)
 
     tasks = set()
     def_lines, ret_lines, music_lines, sound_lines = [], [], [], []

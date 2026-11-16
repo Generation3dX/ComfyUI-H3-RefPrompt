@@ -23,7 +23,12 @@ Each reference node has these fields:
 - `name`: what you write as `@name` in the text.
 - `description`: a noun phrase, such as *the young woman with long dark hair and a blue cardigan*.
 - `keep`: the retention marker. It defaults to a sensible value for each role.
-- `what_is_kept`: what the video keeps from the reference, and what changes. Leave it empty for `fully_preserved`. For `partially_preserved`, `attribute_transfer` or `weak_reference`, write it out, e.g. *her face and hair are kept, but she wears a red coat*. If it's empty, the report gives a warning.
+- `keep_these` / `ignore_these` (image and video): what the video takes from this reference, and what it must not take. Each role starts with its own picks. For example, a staging layout keeps *subject positions, camera angle* and ignores *face, hair, body, clothing*, so a person in the layout image doesn't lend their clothes to your character. The picks become the retention line: *the subject positions and camera angle are kept; the subjects' clothing is not taken from `<Picture 2>`; each subject looks as its own reference shows.*
+- `what_is_kept`: anything the picks can't say, added to the end of the retention line, e.g. *she wears a red coat instead*. With no picks and no text, the line falls back to the role's standard wording, and the report warns if the marker is `partially_preserved`, `attribute_transfer` or `weak_reference`.
+
+H3 has no weights or negative prompt for references. The retention line is how the model is told what to take and what to leave.
+
+Descriptions starting with *A*, *An* or *The* are lower-cased where they follow *is* or *showing*.
 
 References with a subject role that share a name merge into one subject. For example, two images of the same dog become `<Subject 2> … as shown in <Picture 2> and <Picture 3>`.
 

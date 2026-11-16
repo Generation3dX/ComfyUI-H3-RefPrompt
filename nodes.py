@@ -4,7 +4,7 @@ import nodes
 from comfy_api.latest import io
 from comfy_extras.nodes_minimax_h3 import FPS, MiniMaxH3ReferenceToVideo, align_frame_count
 
-from .h3_grammar import AUDIO_MARKERS, ERROR, VISUAL_MARKERS, Result, compile_prompt, lint
+from .h3_grammar import APPEARANCE, AUDIO_MARKERS, ERROR, IMAGE_ASPECTS, VIDEO_ASPECTS, VISUAL_MARKERS, Result, compile_prompt, lint
 
 CATEGORY = "model/conditioning/minimax"
 
@@ -14,6 +14,17 @@ H3Reference = io.Custom("H3_REFERENCE")
 def visual_keep(default):
     return io.Combo.Input("keep", options=VISUAL_MARKERS, default=default,
                           tooltip="How closely the video follows this reference (the retention marker).")
+
+
+def visual_role(key, keep, aspects, kept=(), ignored=(), first=()):
+    return io.DynamicCombo.Option(key, [
+        *first, visual_keep(keep),
+        io.MultiCombo.Input("keep_these", options=aspects, default=list(kept), placeholder="(role default)",
+                            tooltip="What the video takes from this reference. Written into its retention line."),
+        io.MultiCombo.Input("ignore_these", options=aspects, default=list(ignored), placeholder="(nothing)",
+                            tooltip="What the video must not take from this reference, e.g. the clothing of the person "
+                                    "in a staging layout. Written into its retention line."),
+    ])
 
 
 def audio_keep(default):
@@ -26,21 +37,22 @@ def common_inputs(name_tip, description_tip):
         io.String.Input("name", default="", tooltip=name_tip),
         io.String.Input("description", multiline=True, default="", tooltip=description_tip),
         io.String.Input("what_is_kept", multiline=True, default="",
-                        tooltip="What the video keeps from this reference, and what changes. Leave empty for fully_preserved; "
-                                "fill it in for partial, transfer or weak, e.g. 'her face and hair are kept, but she wears a red coat'."),
+                        tooltip="Anything keep_these / ignore_these can't say about what the video keeps and what changes, "
+                                "e.g. 'she wears a red coat instead'. Audio: what is kept from the recording."),
     ]
 
 
 def reference(kind, data, name, description, what_is_kept, role, **extra):
     return io.NodeOutput({"kind": kind, "data": data, "name": name, "description": description, "what_is_kept": what_is_kept,
                           "role": role["role"], "keep": role["keep"], "shots": role.get("shots", ""),
-                          "speaker": role.get("speaker", ""), **extra})
+                          "speaker": role.get("speaker", ""), "keep_these": role.get("keep_these", []),
+                          "ignore_these": role.get("ignore_these", []), **extra})
 
 
 class H3ImageReference(io.ComfyNode):
     @classmethod
     def define_schema(cls):
-        subject = lambda key: io.DynamicCombo.Option(key, [visual_keep("fully_preserved")])
+        option = lambda key, keep, *picks, **first: visual_role(key, keep, IMAGE_ASPECTS, *picks, **first)
         return io.Schema(
             node_id="H3ImageReference",
             display_name="H3 Image Reference",
@@ -52,12 +64,15 @@ class H3ImageReference(io.ComfyNode):
                                "Main features, as a noun phrase: 'the young woman with long dark hair and a blue cardigan'. "
                                "Optional for layouts and frames."),
                 io.DynamicCombo.Input("role", options=[
-                    subject("character"), subject("environment"), subject("prop"), subject("outfit"), subject("style"),
-                    io.DynamicCombo.Option("staging layout", [
-                        io.String.Input("shots", default="1", tooltip="Shot numbers this layout stages, e.g. '1' or '1, 2', or 'all'."),
-                        visual_keep("partially_preserved")]),
-                    io.DynamicCombo.Option("first frame", [visual_keep("fully_preserved")]),
-                    io.DynamicCombo.Option("last frame", [visual_keep("fully_preserved")]),
+                    option("character", "fully_preserved", APPEARANCE, ["background"]),
+                    option("environment", "fully_preserved", ["background", "lighting"]),
+                    option("prop", "fully_preserved"),
+                    option("outfit", "fully_preserved", ["clothing"], ["face", "hair", "background"]),
+                    option("style", "fully_preserved", ["style", "colours", "lighting"]),
+                    option("staging layout", "partially_preserved", ["subject positions", "camera angle"], APPEARANCE,
+                           first=[io.String.Input("shots", default="1", tooltip="Shot numbers this layout stages, e.g. '1' or '1, 2', or 'all'.")]),
+                    option("first frame", "fully_preserved"),
+                    option("last frame", "fully_preserved"),
                 ], tooltip="character / environment / prop / outfit / style: something seen in the video. "
                            "staging layout: where subjects stand and the camera viewpoint. first / last frame: the exact frame."),
             ],
@@ -72,6 +87,7 @@ class H3ImageReference(io.ComfyNode):
 class H3VideoReference(io.ComfyNode):
     @classmethod
     def define_schema(cls):
+        option = lambda key, keep, *picks: visual_role(key, keep, VIDEO_ASPECTS, *picks)
         return io.Schema(
             node_id="H3VideoReference",
             display_name="H3 Video Reference",
@@ -85,11 +101,11 @@ class H3VideoReference(io.ComfyNode):
                 *common_inputs("Name to use as @name in the shots. Subject references with the same name merge into one subject.",
                                "Main features, as a noun phrase. Required for character and motion."),
                 io.DynamicCombo.Input("role", options=[
-                    io.DynamicCombo.Option("character", [visual_keep("fully_preserved")]),
-                    io.DynamicCombo.Option("motion", [visual_keep("fully_preserved")]),
-                    io.DynamicCombo.Option("camera and pacing", [visual_keep("partially_preserved")]),
-                    io.DynamicCombo.Option("edit source", [visual_keep("partially_preserved")]),
-                    io.DynamicCombo.Option("continue from", [visual_keep("fully_preserved")]),
+                    option("character", "fully_preserved", APPEARANCE, ["background"]),
+                    option("motion", "fully_preserved", ["motion", "timing"], APPEARANCE),
+                    option("camera and pacing", "partially_preserved", ["camera movement", "timing"], APPEARANCE),
+                    option("edit source", "partially_preserved"),
+                    option("continue from", "fully_preserved"),
                 ], tooltip="character / motion: a subject seen in the video. camera and pacing: follow its camera work. "
                            "edit source: modify this video. continue from: carry on from its end."),
             ],

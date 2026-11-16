@@ -4,11 +4,52 @@ import { app } from "../../scripts/app.js";
 // - keep a small name label in the top-left corner, as the Nodes 2.0 renderer does; the canvas shows the name only as
 //   a placeholder, which disappears once the box has text
 // - in H3 Ref2VA Prompt, give shots the spare height and keep summary, soundscape and music at two lines
+// - keep_these / ignore_these: draw the name above the list, and fill in the role's picks, which the frontend's
+//   multi-select ignores, when the list is created or the role changes (not when a saved workflow is loaded)
 
 const NODES = new Set(["H3ImageReference", "H3VideoReference", "H3AudioReference", "H3Ref2VAPrompt"]);
 const TWO_LINE = new Set(["summary", "soundscape", "music"]);
 const LABEL = "h3-textarea-label";
 const LABEL_SPACE = 16;
+const PICKS_MARGIN = 16;
+const restored = new WeakSet();
+const prepared = new WeakSet();
+
+function picks(node) {
+    return (node.widgets ?? []).filter((w) => w.inputSpec?.multi_select);
+}
+
+function preparePicks(node) {
+    let grew = false;
+    for (const widget of picks(node)) {
+        if (prepared.has(widget)) {
+            continue;
+        }
+        prepared.add(widget);
+        // a wider margin leaves room above the list for its name; the list keeps its usual 36 px
+        widget.options.margin = PICKS_MARGIN;
+        widget.options.getMinHeight = () => 36 + 2 * PICKS_MARGIN;
+        if (!restored.has(widget) && !widget.value?.length && widget.inputSpec.default?.length) {
+            widget.value = [...widget.inputSpec.default];
+        }
+        grew = true;
+    }
+    if (grew) {
+        node.setSize([node.size[0], Math.max(node.size[1], node.computeSize()[1])]);
+    }
+}
+
+function drawPickLabels(node, ctx) {
+    ctx.save();
+    ctx.font = "10px Arial";
+    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--descrip-text").trim() || "#999";
+    for (const widget of picks(node)) {
+        if (node.isWidgetVisible?.(widget) !== false && widget.y) {
+            ctx.fillText(widget.name.replace("role.", "").replaceAll("_", " "), PICKS_MARGIN + 4, widget.y + 12);
+        }
+    }
+    ctx.restore();
+}
 
 function addLabels(node) {
     for (const widget of node.widgets ?? []) {
@@ -67,9 +108,20 @@ app.registerExtension({
         }
         // text boxes are mounted after the node is created, and again after being hidden, so check on every draw
         const onDrawForeground = nodeType.prototype.onDrawForeground;
-        nodeType.prototype.onDrawForeground = function () {
+        nodeType.prototype.onDrawForeground = function (ctx) {
             onDrawForeground?.apply(this, arguments);
             addLabels(this);
+            if (!this.flags?.collapsed) {
+                preparePicks(this);
+                drawPickLabels(this, ctx);
+            }
+        };
+        const onConfigure = nodeType.prototype.onConfigure;
+        nodeType.prototype.onConfigure = function () {
+            onConfigure?.apply(this, arguments);
+            for (const widget of picks(this)) {
+                restored.add(widget);
+            }
         };
     },
 });
