@@ -1,66 +1,64 @@
 # ComfyUI-H3-RefPrompt
 
-Two nodes for writing MiniMax H3 **Ref2VA** prompts without hand-typing the six-section format.
+Writes MiniMax H3 **Ref2VA** prompts for you. You connect reference images, videos and audio, give each a name and a role, and write the shots in plain text. The node writes the six-section prompt, checks it, and encodes it with the references.
 
-- **H3 Ref2VA Prompt Builder** — readable shorthand in, official prompt out, linted.
-- **H3 Ref2VA Prompt Lint** — checks a prompt you already have (hand-written or from an LLM formatter).
+**H3 Ref2VA Prompt** replaces core's **MiniMax H3 Reference to Video**. It has the same `positive` and `latent` outputs, so the sampler side of your workflow doesn't change. Because the same node numbers the references and writes the prompt, `<Picture 2>` in the prompt is always the second image connected.
 
-Both output `prompt` (wire into `MiniMax H3 Reference to Video` → `prompt`), `length` (frames, snapped to
-the 17k+5 grid, wire into `length`), and `report` (wire into a Preview Any node).
-
-With `strict` on, any error stops the run **before** sampling.
-
-Grammar follows MiniMax's own spec: `skills/h3-prompt-writing/references/ref-en.txt` and `base-en.txt`
-in github.com/MiniMax-AI/MiniMax-H3.
+The grammar follows MiniMax's own spec: `skills/h3-prompt-writing/references/ref-en.txt` and `base-en.txt` in github.com/MiniMax-AI/MiniMax-H3.
 
 ## Install
 
-Copy this folder into `ComfyUI/custom_nodes/` and restart. No dependencies.
+Copy this folder into `ComfyUI/custom_nodes/` and restart ComfyUI. There are no extra dependencies. Requires ComfyUI 0.42 or later, with MiniMax H3 support.
 
-## Shorthand
+## Nodes
+
+| Node | Roles |
+|---|---|
+| **H3 Image Reference** | character, environment, prop, outfit, style, staging layout, first frame, last frame |
+| **H3 Video Reference** | character, motion, camera and pacing, edit source, continue from. It has an optional `soundtrack` input. |
+| **H3 Audio Reference** | voice (with `speaker`), music, ambience |
+| **H3 Ref2VA Prompt** | takes the references, the text, and core's other inputs (clip, vae, audio_vae, width, height, length) |
+
+Each reference node has these fields:
+- `name`: what you write as `@name` in the text.
+- `description`: a noun phrase, such as *the young woman with long dark hair and a blue cardigan*.
+- `keep`: the retention marker. It defaults to a sensible value for each role.
+
+References with a subject role that share a name merge into one subject. For example, two images of the same dog become `<Subject 2> … as shown in <Picture 2> and <Picture 3>`.
+
+From the roles, the node writes:
+- the definition and retention lines;
+- the `[task type]` prefix;
+- the "edited version of `<Video N>`" lead for edit sources;
+- "the shot begins from `<Picture N>`" for first frames;
+- the music and ambience sentences.
+
+## Text
 
 | You write | It becomes |
 | --- | --- |
-| `anna = the woman in @pic1, …` (subjects box) | `<Subject 1> is the woman in <Picture 1>, …` |
-| `@pic2 = the first frame of [Shot 1], …` | `<Picture 2> is the first frame of [Shot 1], …` |
-| `@anna` | `<Subject 1>` |
-| `@pic1` `@vid1` `@aud1` | `<Picture 1>` `<Video 1>` `<Audio 1>` |
-| `@anna(s)` | `<Subject 1> (S1)` — speaker numbers follow the order people first speak |
-| `(s:narrator)` | `(S2)` — a voice that is not a subject |
-| `(s:anna,ben)` | `(S1,S2)` — speaking together |
+| `@anna` | `<Subject 1>`, or `<Picture N>` / `<Video N>` / `<Audio N>` for non-subject roles |
+| `@anna(s)` | `<Subject 1> (S1)`. Speaker numbers follow the order in which people first speak. |
+| `(s:narrator)` | `(S2)`: a voice that isn't a subject |
 | `{{Hello there.}}` | `<d>[English] Hello there.</d>` |
 | `{{French\| Bonjour.}}` | `<d>[French] Bonjour.</d>` |
-| `>>` at line start | `[Shot 1]` |
-| `>> 3.5` at line start | `[Shot 2] At 00:03.500, ` |
-| `anna: full - face and hair kept` (retention box) | `<Subject 1> (appears in [Shot 1], [Shot 2]): fully_preserved - face and hair kept` |
-| `cafe (all): full - …` | appears in every shot (for environments you don't re-tag each shot) |
-| `// note to self` at line start | removed |
+| `>>` at the start of a line | `[Shot 1]` |
+| `>> 3.5` at the start of a line | `[Shot 2] At 00:03.500, ` |
+| `@clip_audio` | the soundtrack of the video reference named `clip` |
+| `// note` at the start of a line | removed |
 
-Retention markers — visual: `full` `partial` `transfer` `weak`; audio: `copy` `partial` `ref` `weak`.
-The official names (`fully_preserved`, …) are accepted too.
-
-Line breaks inside a shot are free, so you can lay a shot out however reads best.
-Official syntax (`<Subject 1>`, `<d>…</d>`, `<scenetrans>`, `<cutoff>`) can be typed directly anywhere.
-
-After `>> 3.5`, start the text with a cut phrase: `the shot cuts to …`.
+In `shots`, put the style sentence first, then one `>>` per shot. Line breaks inside a shot are allowed. After `>> 3.5`, start with a cut phrase, such as *the shot cuts to …*.
 
 ## Example
 
-subjects
-```
-anna = the young woman in @pic1, with long dark hair and a blue cardigan
-cafe = the coffee-shop interior in @pic2, with a brick wall and an orange sofa
-@aud1 = the voice-timbre reference for @anna(s)
-```
+References:
+- Image, `anna`, character: *the young woman with long dark hair and a blue cardigan*
+- Image, `cafe`, environment: *the coffee-shop interior with a brick wall and an orange sofa*
+- Audio, `anna_voice`, voice, speaker `anna`
+
 summary
 ```
-@anna eats a cookie in @cafe, using @aud1 as her voice-timbre reference.
-```
-retention
-```
-anna: full - her face, long dark hair and blue cardigan are retained
-cafe (all): full - brick wall and orange sofa are retained
-@aud1: ref - its timbre guides @anna's delivery without copying the signal
+@anna eats a cookie in @cafe, using @anna_voice as her voice-timbre reference.
 ```
 shots
 ```
@@ -69,26 +67,24 @@ Realistic sitcom style with warm indoor lighting.
    {{Hey! Watch your dog!}}
 >> 3.0 the shot cuts to a close-up of @anna(s). She replies, {{Well, he has good taste.}}
 ```
-Toggles: `reference_generation` + `audio_reference`; `num_images` 2, `num_audios` 1.
 
-## What the linter catches
+The `report` output lists every problem and the `@name` → label mapping. Wire it into a Preview Any node. With `strict` on (an advanced input, on by default), any error stops the run before sampling.
 
-Errors (block the run): misspelled or reordered section headers; malformed tags (`<Subject1>`,
-`<subject 1>`, `[Subject 1]`); labels used but never defined; tags pointing at unwired reference slots;
-invalid task types or separators; invalid or wrong-family retention markers; missing or duplicate
-retention lines; speaker IDs in `retention_analysis`; shot numbering gaps; bad, missing, non-increasing or
-out-of-duration timestamps; unbalanced `<d>`; missing `[Language]`; dialogue outside
-`detailed_description`; speaker IDs that never speak.
+## What it catches
 
-Warnings (reported only): wired references never mentioned; subjects with no source asset; dialogue in
-quotes instead of `<d>`; missing speaker before a line; missing cut phrase; missing end punctuation;
-task types that disagree with audio markers; style sentence missing before `[Shot 1]`.
+These errors stop the run:
+- unknown `@names`;
+- unnamed or duplicate references;
+- subjects without a description, or never shown in a shot;
+- a voice whose speaker never speaks;
+- missing or unordered cut times, or cut times past the video's length;
+- unclosed `{{`;
+- dialogue outside the shots;
+- an empty summary;
+- `audio_vae` missing when audio is connected.
 
-## Audio numbering
-
-`<Audio N>` counts wired `ref_video_audio_*` inputs first (in video order), then standalone `ref_audio_*`.
-Set `num_audios` to the total.
+The finished prompt is then checked against the official format as a safety net: headers, tags, markers, timestamps, `<d>` balance and speaker IDs.
 
 ## Tests
 
-`python tests/test_grammar.py` — no ComfyUI needed.
+`python tests/test_grammar.py`. No ComfyUI needed.

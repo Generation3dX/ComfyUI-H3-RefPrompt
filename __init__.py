@@ -1,3 +1,15 @@
-from .nodes import NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS
+from typing_extensions import override
 
-__all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]
+from comfy_api.latest import ComfyExtension, io
+
+from .nodes import H3AudioReference, H3ImageReference, H3Ref2VAPrompt, H3VideoReference
+
+
+class H3RefPromptExtension(ComfyExtension):
+    @override
+    async def get_node_list(self) -> list[type[io.ComfyNode]]:
+        return [H3ImageReference, H3VideoReference, H3AudioReference, H3Ref2VAPrompt]
+
+
+async def comfy_entrypoint() -> H3RefPromptExtension:
+    return H3RefPromptExtension()

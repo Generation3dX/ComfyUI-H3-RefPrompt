@@ -1,5 +1,5 @@
 """
-MiniMax H3 Ref2VA prompt grammar: shorthand compiler + linter.
+MiniMax H3 Ref2VA prompt grammar: compiler from references + shot text, and linter.
 
 Pure Python, no ComfyUI imports, so it can be unit-tested standalone.
 
@@ -22,10 +22,10 @@ SECTIONS = [
 ]
 
 TASK_TYPES = [
-    "keyframe completion",
-    "reference generation",
     "video editing",
     "video continuation",
+    "keyframe completion",
+    "reference generation",
     "audio reuse",
     "audio reference",
 ]
@@ -33,21 +33,66 @@ TASK_TYPES = [
 VISUAL_MARKERS = ["fully_preserved", "partially_preserved", "attribute_transfer", "weak_reference"]
 AUDIO_MARKERS = ["fully_copy", "partially_copy", "reference", "weak_reference"]
 
-VISUAL_ALIASES = {
-    "full": "fully_preserved",
-    "partial": "partially_preserved",
-    "transfer": "attribute_transfer",
-    "weak": "weak_reference",
+# role -> (how the subject definition cites its asset, what the retention line says is kept)
+SUBJECT_ROLES = {
+    ("image", "character"): ("whose appearance comes from", "the identity and appearance"),
+    ("image", "environment"): ("as shown in", "the layout, materials and lighting of the environment"),
+    ("image", "prop"): ("as shown in", "the object's shape, colours and materials"),
+    ("image", "outfit"): ("as shown in", "the outfit's cut, colours and materials"),
+    ("image", "style"): ("as shown in", "the visual style, colour palette and lighting"),
+    ("video", "character"): ("whose appearance comes from", "the identity and appearance"),
+    ("video", "motion"): ("whose motion comes from", "the movement and its timing"),
 }
-AUDIO_ALIASES = {
-    "copy": "fully_copy",
-    "full": "fully_copy",
-    "partial": "partially_copy",
-    "ref": "reference",
-    "weak": "weak_reference",
+# subjects that need no tag in the shots: they apply to every shot unless tagged in some
+EVERY_SHOT_ROLES = {"environment", "style"}
+
+ASSET_ASPECTS = {
+    "staging layout": "the camera viewpoint and the placement of the subjects",
+    "first frame": "the composition, subjects and lighting of the frame",
+    "last frame": "the composition, subjects and lighting of the frame",
+    "camera and pacing": "the camera movement, cuts and pacing",
+    "edit source": "the parts of the source video that are not edited",
+    "continue from": "the subjects, setting and motion at the end of the source video",
 }
 
-KINDS = {"pic": "Picture", "vid": "Video", "aud": "Audio"}
+VISUAL_NOTES = {
+    "fully_preserved": "{} are retained.",
+    "partially_preserved": "{} are partly retained.",
+    "attribute_transfer": "{} are transferred to the target subject.",
+    "weak_reference": "only a broad similarity of {} is kept.",
+}
+
+AUDIO_NOTES = {
+    "voice": {"reference": "its voice timbre guides the delivery of {who} without copying the original signal.",
+              "fully_copy": "{a} is reused as the spoken audio of {who}.",
+              "partially_copy": "part of {a} is reused as the spoken audio of {who}.",
+              "weak_reference": "only a broad similarity to its voice is kept."},
+    "music": {"reference": "only its music style, tempo and instrumentation are referenced.",
+              "fully_copy": "{a} is reused 1:1 as the audience-only score.",
+              "partially_copy": "part of {a} is reused in the audience-only score.",
+              "weak_reference": "only a broad similarity of mood and genre is kept."},
+    "ambience": {"reference": "only its ambience texture is referenced.",
+                 "fully_copy": "{a} is reused 1:1 as the ambience layer.",
+                 "partially_copy": "part of {a} is reused in the ambience layer.",
+                 "weak_reference": "only a broad similarity of atmosphere is kept."},
+    "soundtrack": {"reference": "only its sound character is referenced.",
+                   "fully_copy": "{a} is reused 1:1 as the target video's complete audio track.",
+                   "partially_copy": "part of {a} is reused in the target video's audio.",
+                   "weak_reference": "only a broad similarity of sound is kept."},
+}
+AUDIO_USE = {"reference": "", "weak_reference": "",
+             "fully_copy": ", reused in the target video", "partially_copy": ", partly reused in the target video"}
+# sentences opening the audio section that matches the layer, per spec section 6
+SECTION_SENTENCES = {
+    "music": {"reference": "The score follows the music style of {a}.",
+              "fully_copy": "{a} is directly reused as the complete audience-only score.",
+              "partially_copy": "Part of {a} is reused in the audience-only score.",
+              "weak_reference": "The score loosely resembles the mood of {a}."},
+    "ambience": {"reference": "The ambience follows the texture of {a}.",
+                 "fully_copy": "The ambience layer of {a} is copied throughout the video.",
+                 "partially_copy": "Part of the ambience of {a} is reused.",
+                 "weak_reference": "The ambience loosely resembles {a}."},
+}
 
 CUT_PHRASES = (
     "the camera cuts to",
@@ -56,8 +101,6 @@ CUT_PHRASES = (
     "the shot changes to",
     "the shot switches to",
 )
-
-FPS = 24
 
 ERROR, WARN, INFO = "ERROR", "WARN", "INFO"
 
@@ -68,6 +111,7 @@ _SPEAKER_RE = re.compile(r"\(S([1-9]\d*)((?:,S[1-9]\d*)*)\)")
 _HEADER_RE = re.compile(r"(?m)^(" + "|".join(SECTIONS) + r"):")
 _SHOT_RE = re.compile(r"\[Shot ([1-9]\d*)\]")
 _TS_RE = re.compile(r" At (\d\d):(\d\d)\.(\d\d\d), ")
+_NAME_RE = re.compile(r"[A-Za-z_]\w*")
 
 
 @dataclass
@@ -84,6 +128,7 @@ class Issue:
 class Result:
     prompt: str = ""
     issues: list = field(default_factory=list)
+    legend: list = field(default_factory=list)
 
     @property
     def errors(self):
@@ -98,13 +143,7 @@ class Result:
         head = "H3 Ref2VA lint: " + ("OK" if not e and not w else f"{e} error(s), {w} warning(s)")
         order = {ERROR: 0, WARN: 1, INFO: 2}
         lines = [str(i) for i in sorted(self.issues, key=lambda i: order[i.level])]
-        return "\n".join([head] + lines)
-
-
-def frames_for_duration(seconds: float) -> int:
-    """Snap to H3's 17k+5 frame grid at 24 fps (same maths as the official template)."""
-    f = max(5, round(seconds * FPS))
-    return f + (5 - f % 17) % 17
+        return "\n".join([head] + lines + ([""] + self.legend if self.legend else []))
 
 
 def _suggest(word: str, options) -> str:
@@ -132,38 +171,42 @@ def _one_line(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+def _join(items):
+    return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " and " + items[-1]
+
+
+def _shot_list(nums):
+    return ", ".join(f"[Shot {n}]" for n in nums)
+
+
 # --------------------------------------------------------------------------
-# Compiler: readable shorthand -> official six-section prompt
+# Compiler: references + shot text -> official six-section prompt
 # --------------------------------------------------------------------------
 
 class _Ctx:
-    def __init__(self, language: str):
-        self.subjects = {}   # lowercase name -> number
-        self.speakers = {}   # lowercase key -> number
+    def __init__(self, language: str, names: dict, issues: list):
+        self.names = names     # lowercase name -> label
+        self.speakers = {}     # lowercase key -> number
         self.language = language.strip() or "English"
-        self.issues = []
+        self.issues = issues
 
     def err(self, section, msg):
         self.issues.append(Issue(ERROR, section, msg))
 
     def label(self, name: str, section: str):
-        """Resolve 'pic1' / 'natalie' to an official label, or None."""
         key = name.lower()
-        m = re.fullmatch(r"(pic|vid|aud)([1-9]\d*)", key)
-        if m:
-            return f"<{KINDS[m.group(1)]} {m.group(2)}>"
-        if key in self.subjects:
-            return f"<Subject {self.subjects[key]}>"
-        self.err(section, f"unknown reference '@{name}'." + _suggest(key, self.subjects)
-                 + " (Assets are @pic1 / @vid1 / @aud1; subjects must be defined in 'subjects'.)")
+        if key in self.names:
+            return self.names[key]
+        self.err(section, f"unknown reference '@{name}'." + _suggest(key, self.names)
+                 + " Every @name must be the name of a connected reference.")
         return None
 
     def speaker(self, key: str, section: str, assign: bool):
         key = key.lower()
         if key not in self.speakers:
             if not assign:
-                self.err(section, f"speaker '{key}' is referenced here but never speaks in the shots, "
-                                  "so it has no (Sx) number.")
+                self.err(section, f"'{key}' never speaks in the shots, so it has no (Sx) number. "
+                                  f"Mark their lines with @{key}(s) or (s:{key}).")
                 return None
             self.speakers[key] = len(self.speakers) + 1
         return self.speakers[key]
@@ -204,51 +247,59 @@ class _Ctx:
         return re.sub(r"\{\{(.*?)\}\}", dlg, out, flags=re.S)
 
 
-def compile_prompt(subjects: str, summary: str, retention: str, shots: str,
-                   soundscape: str, music: str, task_types, language: str = "English"):
-    """Returns (prompt_text, [Issue]). Compile errors are in the issue list."""
-    ctx = _Ctx(language)
-    raw = {k: _strip_comments(v) for k, v in dict(
-        subjects=subjects, summary=summary, retention=retention, shots=shots,
-        soundscape=soundscape, music=music).items()}
+def _label_refs(refs, issues):
+    """Number the assets the way MiniMax H3 Reference to Video presents them: images, then videos, then
+    audio, where each video's soundtrack takes its <Audio j> before the standalone audio.
+    Returns (subjects, assets, names): subject groups, non-subject entries, and the @name -> label map."""
+    def err(msg):
+        issues.append(Issue(ERROR, "references", msg))
 
-    # ---- pass 1: subject_definitions entries (names -> numbers) ----
-    entries = []  # [lhs_kind, lhs_key, rhs]
-    for line in raw["subjects"].split("\n"):
-        if not line.strip():
+    counts = {"image": 0, "video": 0, "audio": 0}
+    entries = []
+    for r in [r for r in refs if r["kind"] == "image"] + [r for r in refs if r["kind"] == "video"]:
+        counts[r["kind"]] += 1
+        entries.append(dict(r, label=f"<{'Picture' if r['kind'] == 'image' else 'Video'} {counts[r['kind']]}>"))
+    for e in list(entries):
+        if e["kind"] == "video" and e.get("soundtrack"):
+            counts["audio"] += 1
+            entries.append({"kind": "audio", "role": "soundtrack", "name": e["name"] + "_audio", "description": "",
+                            "retained": "", "keep": e["soundtrack"], "video": e["label"],
+                            "label": f"<Audio {counts['audio']}>"})
+    for r in refs:
+        if r["kind"] == "audio":
+            counts["audio"] += 1
+            entries.append(dict(r, label=f"<Audio {counts['audio']}>"))
+
+    subjects, assets, names = {}, [], {}
+    for e in entries:
+        key = e["name"].strip().lower()
+        if not key:
+            err(f"the {e['kind']} reference {e['label']} has no name. Give each reference a name to use as @name.")
             continue
-        if line[0] in " \t" and entries:
-            entries[-1][2] += " " + line.strip()
+        if not _NAME_RE.fullmatch(key):
+            err(f"'{e['name']}' is not a valid name (letters, digits and underscore, not starting with a digit).")
             continue
-        if "=" not in line:
-            ctx.err("subject_definitions", f"line has no '=': '{line.strip()[:60]}'. Write 'name = definition' "
-                                           "(indent a line to continue the previous one).")
-            continue
-        lhs, rhs = (p.strip() for p in line.split("=", 1))
-        key = lhs.lstrip("@").lower()
-        rhs = re.sub(r"^is\s+", "", rhs)
-        if not rhs:
-            ctx.err("subject_definitions", f"'{lhs}' has an empty definition.")
-            continue
-        if re.fullmatch(r"(pic|vid|aud)[1-9]\d*", key):
-            if any(e[1] == key for e in entries):
-                ctx.err("subject_definitions", f"'@{key}' is defined twice; a label is defined exactly once.")
+        if (e["kind"], e["role"]) in SUBJECT_ROLES:
+            if key in names and key not in subjects:
+                err(f"the name '{key}' is used by two references. Only subject references (character, environment, "
+                    "prop, outfit, style, motion) may share a name, which merges them into one subject.")
                 continue
-            entries.append(["asset", key, rhs])
-        elif re.fullmatch(r"[a-z_]\w*", key):
-            if key in ctx.subjects:
-                ctx.err("subject_definitions", f"subject '{key}' is defined twice; a label is defined exactly once.")
-                continue
-            ctx.subjects[key] = len(ctx.subjects) + 1
-            entries.append(["subject", key, rhs])
+            if key not in subjects:
+                subjects[key] = {"label": f"<Subject {len(subjects) + 1}>", "refs": []}
+                names[key] = subjects[key]["label"]
+            subjects[key]["refs"].append(e)
         else:
-            ctx.err("subject_definitions", f"'{lhs}' is not a valid name (letters, digits, underscore).")
+            if key in names:
+                err(f"the name '{key}' is used by two references; only subject references may share a name.")
+                continue
+            names[key] = e["label"]
+            assets.append(e)
+    return subjects, assets, names
 
-    literal = re.search(r"\(S\d+(?:,S\d+)*\)", "\n".join(raw.values()))
 
-    # ---- pass 2: shots (assigns speaker numbers in order of vocal events) ----
+def _parse_shots(raw):
     style_lines, shot_list, cur = [], [], None
-    for line in raw["shots"].split("\n"):
+    for line in raw.split("\n"):
         s = line.strip()
         if s.startswith(">>"):
             rest = s[2:].strip()
@@ -264,107 +315,195 @@ def compile_prompt(subjects: str, summary: str, retention: str, shots: str,
             style_lines.append(s)
         else:
             cur["lines"].append(s)
+    return style_lines, shot_list
 
-    if shot_list:
-        style = ctx.expand(_one_line(" ".join(style_lines)), "detailed_description", True, True)
-        dd_lines = [style] if style else []
-        bodies = []
-        for i, sh in enumerate(shot_list, 1):
-            body = ctx.expand(_one_line(" ".join(sh["lines"])), "detailed_description", True, True)
-            bodies.append(body)
-            if not body:
-                ctx.err("detailed_description", f"shot {i} is empty.")
-            if i == 1:
-                if sh["t"]:
-                    ctx.err("detailed_description", "the first '>>' must not have a time; [Shot 1] has no timestamp.")
-                dd_lines.append(f"[Shot 1] {body}")
-            else:
-                if sh["t"] is None:
-                    ctx.err("detailed_description", f"shot {i} needs a cut time, e.g. '>> 3.5 the shot cuts to ...'.")
-                    dd_lines.append(f"[Shot {i}] {body}")
-                else:
-                    dd_lines.append(f"[Shot {i}] At {_fmt_ts(sh['t'])}, {body}")
-        detailed = "\n".join(dd_lines)
-    else:
-        detailed = ctx.expand(raw["shots"].strip(), "detailed_description", True, True)
-        bodies = [m for m in _SHOT_RE.split(detailed)[2::2]]
-        if "[Shot 1]" not in detailed:
-            ctx.err("detailed_description", "no shots found. Start each shot with a '>>' line "
-                                            "('>>' for the first, '>> 3.5' for later cuts).")
 
+def compile_prompt(refs, summary: str, shots: str, soundscape: str, music: str, language: str = "English"):
+    """refs: dicts with kind (image/video/audio), role, name, description, retained, keep, and per role
+    shots (staging layout), speaker (voice) or soundtrack (video soundtrack marker, or None).
+    Returns (prompt_text, [Issue], legend lines)."""
+    issues = []
+    subjects, assets, names = _label_refs(refs, issues)
+    ctx = _Ctx(language, names, issues)
+    raw = {k: _strip_comments(v) for k, v in dict(summary=summary, shots=shots, soundscape=soundscape, music=music).items()}
+
+    # ---- detailed_description (assigns speaker numbers in order of vocal events) ----
+    literal = re.search(r"\(S\d+(?:,S\d+)*\)", "\n".join(raw.values()))
+    style_lines, shot_list = _parse_shots(raw["shots"])
+    if not shot_list:
+        ctx.err("detailed_description", "no shots found. Start each shot with a '>>' line "
+                                        "('>>' for the first, '>> 3.5' for a cut at 3.5 s).")
+    style = ctx.expand(_one_line(" ".join(style_lines)), "detailed_description", True, True)
+    if not style:
+        ctx.err("detailed_description", "write the style in one or two sentences before the first '>>'.")
+    bodies = []
+    for i, sh in enumerate(shot_list, 1):
+        body = ctx.expand(_one_line(" ".join(sh["lines"])), "detailed_description", True, True)
+        if not body:
+            ctx.err("detailed_description", f"shot {i} is empty.")
+        if i == 1 and sh["t"]:
+            ctx.err("detailed_description", "the first '>>' must not have a time; [Shot 1] has no timestamp.")
+        if i > 1 and sh["t"] is None:
+            ctx.err("detailed_description", f"shot {i} needs a cut time, e.g. '>> 3.5 the shot cuts to ...'.")
+        bodies.append(body)
     if literal and ctx.speakers:
         ctx.err("detailed_description", f"literal speaker ID '{literal.group(0)}' is mixed with auto-numbered "
                                         "speakers ('@name(s)' / '(s:name)'). Use one style only.")
+    n_shots = len(bodies)
+    for a in assets:
+        if a["role"] == "first frame" and bodies and a["label"] not in bodies[0]:
+            bodies[0] = f"The shot begins from {a['label']}. " + bodies[0]
+        if a["role"] == "last frame" and bodies and a["label"] not in bodies[-1]:
+            bodies[-1] = bodies[-1] + f" The shot ends on {a['label']}."
+    dd_lines = [style] if style else []
+    for i, (sh, body) in enumerate(zip(shot_list, bodies), 1):
+        stamp = f"At {_fmt_ts(sh['t'])}, " if i > 1 and sh["t"] is not None else ""
+        dd_lines.append(f"[Shot {i}] {stamp}{body}")
 
-    # ---- pass 3: everything else ----
-    def_lines = []
-    for kind, key, rhs in entries:
-        lab = ctx.label(key, "subject_definitions")
-        def_lines.append(f"{lab} is {ctx.expand(_one_line(rhs), 'subject_definitions')}")
+    def notes(e, default):
+        return ctx.expand(_one_line(e["retained"]), "retention_analysis") if e["retained"].strip() else default
 
-    summ = _one_line(raw["summary"])
-    if summ.startswith("["):
-        ctx.err("summary", "don't type the [task type] prefix; it is generated from the task-type toggles.")
-    chosen = [t for t in TASK_TYPES if t in set(task_types)]
-    summ_out = f"[{' + '.join(chosen)}] {ctx.expand(summ, 'summary')}"
+    def desc(e, section="subject_definitions"):
+        return ctx.expand(_one_line(e["description"]).rstrip("."), section)
 
-    ret_lines = []
-    ret_re = re.compile(r"^@?(?P<key>[A-Za-z_]\w*)\s*(?:\((?P<paren>.*?)\))?\s*:\s*(?P<marker>[A-Za-z_]+)\s*"
-                        r"(?:-|–|—)\s*(?P<note>.+)$")
-    for line in raw["retention"].split("\n"):
-        s = line.strip()
-        if not s:
-            continue
-        if line[0] in " \t" and ret_lines:
-            ret_lines[-1] += " " + ctx.expand(s, "retention_analysis")
-            continue
-        m = ret_re.match(s)
-        if not m:
-            ctx.err("retention_analysis", f"can't parse '{s[:60]}'. Format: 'name: full - what is kept' or "
-                                          "'@pic2 ([Shot 1] first frame): full - ...'.")
-            continue
-        lab = ctx.label(m["key"], "retention_analysis")
-        if lab is None:
-            continue
-        is_audio = lab.startswith("<Audio")
-        valid = AUDIO_MARKERS if is_audio else VISUAL_MARKERS
-        aliases = AUDIO_ALIASES if is_audio else VISUAL_ALIASES
-        mk = m["marker"].lower()
-        mk = aliases.get(mk, mk)
-        if mk not in valid:
-            fam = "audio" if is_audio else "visual"
-            ctx.err("retention_analysis", f"'{m['marker']}' is not a valid {fam} marker for {lab}. Use one of: "
-                    + ", ".join(sorted(set(aliases) | set(valid))) + "." + _suggest(mk, list(aliases) + valid))
-            continue
-        paren = m["paren"]
-        if lab.startswith("<Subject"):
-            if paren is None or paren.strip().lower() == "all":
-                if paren is None:
-                    idx = [i for i, b in enumerate(bodies, 1) if lab in b]
+    tasks = set()
+    def_lines, ret_lines, music_lines, sound_lines = [], [], [], []
+
+    # ---- subjects ----
+    for key, s in subjects.items():
+        lab, first = s["label"], s["refs"][0]
+        d = next((desc(e) for e in s["refs"] if e["description"].strip()), "")
+        if not d:
+            ctx.err("subject_definitions", f"'{key}' has no description. Describe its main features, "
+                                           "e.g. 'the young woman with long dark hair and a blue cardigan'.")
+            d = key
+        sources = {}
+        for e in s["refs"]:
+            sources.setdefault(SUBJECT_ROLES[(e["kind"], e["role"])][0], []).append(e["label"])
+        cites = " and ".join(f"{phrase} {_join(labels)}" for phrase, labels in sources.items())
+        def_lines.append(f"{lab} is {d}, {cites}.")
+        tasks.add("reference generation")
+        shown = [i for i, b in enumerate(bodies, 1) if lab in b]
+        if not shown:
+            if first["role"] in EVERY_SHOT_ROLES:
+                shown = list(range(1, n_shots + 1))
+            elif n_shots:
+                ctx.err("retention_analysis", f"'{key}' ({lab}) never appears in the shots. Tag it with @{key} "
+                                              "where it is seen.")
+        aspects = SUBJECT_ROLES[(first["kind"], first["role"])][1]
+        note = notes(first, VISUAL_NOTES[first["keep"]].format(aspects))
+        ret_lines.append(f"{lab} (appears in {_shot_list(shown)}): {first['keep']} - {note}")
+
+    # ---- pictures, videos, audio ----
+    for e in assets:
+        lab, role, keep = e["label"], e["role"], e["keep"]
+        d = desc(e) if e["description"].strip() else ""
+        showing = f", showing {d}" if d else ""
+        if e["kind"] in ("image", "video"):
+            if role == "staging layout":
+                spec = e.get("shots", "1").strip().lower()
+                if spec == "all":
+                    nums = list(range(1, n_shots + 1))
                 else:
-                    idx = list(range(1, len(bodies) + 1))
-                if not idx:
-                    ctx.err("retention_analysis", f"{lab} ('{m['key']}') never appears in any shot. Tag it in the "
-                                                  "shots with '@" + m["key"] + "', or write '(all)' after its name.")
-                paren = "appears in " + ", ".join(f"[Shot {i}]" for i in idx)
-        head = lab + (f" ({ctx.expand(paren, 'retention_analysis')})" if paren else "")
-        ret_lines.append(f"{head}: {mk} - {ctx.expand(m['note'].strip(), 'retention_analysis')}")
+                    nums = [int(n) for n in re.findall(r"\d+", spec)]
+                    if not nums or any(not 1 <= n <= n_shots for n in nums):
+                        ctx.err("references", f"staging layout '{e['name']}': shots '{e.get('shots', '')}' must be "
+                                              f"shot numbers between 1 and {n_shots}, or 'all'.")
+                where = _join([f"[Shot {n}]" for n in nums]) if nums else "[Shot 1]"
+                definition = f"{lab} is the staging-layout reference for {where}, defining the camera viewpoint and the placement of the subjects{showing}."
+                paren = f"{_shot_list(nums or [1])} staging layout"
+                tasks.add("reference generation")
+            elif role == "first frame":
+                definition = f"{lab} is the first frame of [Shot 1]{showing}."
+                paren = "[Shot 1] first frame"
+                tasks.add("keyframe completion")
+            elif role == "last frame":
+                definition = f"{lab} is the last frame of [Shot {max(n_shots, 1)}]{showing}."
+                paren = f"[Shot {max(n_shots, 1)}] last frame"
+                tasks.add("keyframe completion")
+            elif role == "camera and pacing":
+                definition = f"{lab} is the camera-movement and pacing reference for the target video{showing}."
+                paren = "camera movement and pacing"
+                tasks.add("reference generation")
+            elif role == "edit source":
+                definition = f"{lab} is the source video for the target video edit{showing}."
+                paren = "source video"
+                tasks.add("video editing")
+            else:  # continue from
+                definition = f"{lab} is the source video that the target video continues from{showing}."
+                paren = "continuation source"
+                tasks.add("video continuation")
+            def_lines.append(definition)
+            ret_lines.append(f"{lab} ({paren}): {keep} - {notes(e, VISUAL_NOTES[keep].format(ASSET_ASPECTS[role]))}")
+            continue
 
-    snd = ctx.expand(_one_line(raw["soundscape"]), "overall_soundscape") or "N/A"
-    mus = ctx.expand(_one_line(raw["music"]), "non_diegetic_music") or "N/A"
+        tasks.add("audio reuse" if keep in ("fully_copy", "partially_copy") else "audio reference")
+        voiced = d and f", {d}"
+        if role == "voice":
+            key = e["speaker"].strip().lower()
+            who, who_id = (names[key] if key in subjects else f"the {key}"), ""
+            if not key:
+                ctx.err("references", f"the voice '{e['name']}' ({lab}) needs a speaker: the name of the subject "
+                                      "it voices, or the key used in (s:key) in the shots.")
+            else:
+                n = ctx.speaker(key, "references", False)
+                who_id = f"{who} (S{n})" if n else who
+            if keep in ("fully_copy", "partially_copy"):
+                definition = f"{lab} is the spoken audio of {who_id}{AUDIO_USE[keep]}{voiced}."
+            else:
+                definition = f"{lab} is the voice-timbre reference for {who_id}{voiced}."
+            default = AUDIO_NOTES["voice"][keep].format(a=lab, who=who)
+        elif role == "soundtrack":
+            definition = f"{lab} is the synchronized audio track of {e['video']}{AUDIO_USE[keep]}."
+            default = AUDIO_NOTES["soundtrack"][keep].format(a=lab)
+        else:
+            what = "background music" if role == "music" else "ambience track"
+            if keep in ("fully_copy", "partially_copy"):
+                definition = f"{lab} is the {what}{AUDIO_USE[keep]}{voiced}."
+            else:
+                definition = f"{lab} is the {what} reference{voiced}."
+            default = AUDIO_NOTES[role][keep].format(a=lab)
+            (music_lines if role == "music" else sound_lines).append(SECTION_SENTENCES[role][keep].format(a=lab))
+        def_lines.append(definition)
+        ret_lines.append(f"{lab}: {keep} - {notes(e, default)}")
+
+    # ---- summary ----
+    summ = ctx.expand(_one_line(raw["summary"]), "summary")
+    if not summ:
+        ctx.err("summary", "write a one-paragraph summary of the video.")
+    if summ.startswith("["):
+        ctx.err("summary", "don't type the [task type] prefix; it is worked out from the reference roles.")
+    for e in assets:
+        lead = f"The target video is an edited version of {e['label']}."
+        if e["role"] == "edit source" and not summ.startswith(lead):
+            summ = f"{lead} {summ}".strip()
+    if not tasks:
+        ctx.err("summary", "connect at least one reference.")
+    summ_out = f"[{' + '.join(t for t in TASK_TYPES if t in tasks)}] {summ}"
+
+    snd = " ".join(sound_lines + [ctx.expand(_one_line(raw["soundscape"]), "overall_soundscape")]).strip() or "N/A"
+    mus = " ".join(music_lines + [ctx.expand(_one_line(raw["music"]), "non_diegetic_music")]).strip() or "N/A"
 
     text = "\n\n".join([
         "subject_definitions:\n" + "\n".join(def_lines),
         "summary:\n" + summ_out,
         "retention_analysis:\n" + "\n".join(ret_lines),
-        "detailed_description:\n" + detailed,
+        "detailed_description:\n" + "\n".join(dd_lines),
         "overall_soundscape:\n" + snd,
         "non_diegetic_music:\n" + mus,
     ])
     for junk, why in (("{{", "unclosed dialogue '{{'"), ("}}", "stray '}}'"), (">>", "stray '>>' (must start a line)")):
         if junk in text:
             ctx.err("prompt", why + " left in the compiled prompt.")
-    return text, ctx.issues
+
+    legend = ["References:"]
+    for key, s in subjects.items():
+        legend.append(f"  @{key} = {s['label']} ({', '.join(e['label'] + ' ' + e['role'] for e in s['refs'])})")
+    for e in assets:
+        legend.append(f"  @{e['name'].strip().lower()} = {e['label']} ({e['role']})")
+    if ctx.speakers:
+        legend.append("Speakers: " + ", ".join(f"(S{n}) {k}" for k, n in ctx.speakers.items()))
+    return text, issues, legend
 
 
 # --------------------------------------------------------------------------
