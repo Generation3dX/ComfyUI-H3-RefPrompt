@@ -112,6 +112,8 @@ CUT_PHRASES = (
 )
 
 ERROR, WARN, INFO = "ERROR", "WARN", "INFO"
+# coloured so the report reads at a glance in any text display node
+MARKS = {ERROR: "🔴", WARN: "🟡", INFO: "🔵"}
 
 _LABEL_RE = re.compile(r"<(Subject|Picture|Video|Audio) ([1-9]\d*)>")
 _VALID_TAG_RE = re.compile(r"^<(?:(?:Subject|Picture|Video|Audio) [1-9]\d*|/?d|scenetrans|cutoff)>$")
@@ -133,7 +135,7 @@ class Issue:
     msg: str
 
     def __str__(self) -> str:
-        return f"[{self.level}] {self.section}: {self.msg}"
+        return f"{MARKS[self.level]} {self.level} {self.section}: {self.msg}"
 
 
 @dataclass
@@ -152,7 +154,7 @@ class Result:
 
     def report(self) -> str:
         e, w = len(self.errors), len(self.warnings)
-        head = "H3 Ref2VA lint: " + ("OK" if not e and not w else f"{e} error(s), {w} warning(s)")
+        head = "H3 Ref2VA lint: " + ("🟢 OK" if not e and not w else f"{e} error(s), {w} warning(s)")
         order = {ERROR: 0, WARN: 1, INFO: 2}
         lines = [str(i) for i in sorted(self.issues, key=lambda i: order[i.level])]
         return "\n".join([head] + lines + ([""] + self.legend if self.legend else []))

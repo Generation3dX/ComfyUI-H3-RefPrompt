@@ -76,7 +76,7 @@ Realistic sitcom style with warm indoor lighting.
 >> 3.0 the shot cuts to a close-up of @anna, who replies, {{Well, he has good taste.}}
 ```
 
-The `report` output lists every problem and the `@name` → label mapping. Wire it into a Preview Any node. With `strict` on (an advanced input, on by default), any error stops the run before sampling.
+The `report` output lists every problem, marked 🔴 error, 🟡 warning or 🔵 info, and the `@name` → label mapping. Wire it into a Preview Any node. With `strict` on (an advanced input, on by default), any error stops the run before sampling.
 
 ## What it catches
 
