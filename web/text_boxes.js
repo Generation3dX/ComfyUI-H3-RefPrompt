@@ -11,7 +11,20 @@ const NODES = new Set(["H3ImageReference", "H3VideoReference", "H3AudioReference
 const TWO_LINE = new Set(["summary", "soundscape", "music"]);
 const LABEL = "h3-textarea-label";
 const LABEL_SPACE = 16;
-const PICKS_MARGIN = 16;
+// the frontend's multi-select is sized for Nodes 2.0; shrink it to a normal widget row. Only these lists are this short,
+// so the container query leaves other nodes' multi-selects alone. The margin above the box holds the drawn name.
+const PICKS_MARGIN = 12;
+const PICKS_HEIGHT = 20;
+const style = document.createElement("style");
+style.textContent = `
+.dom-widget:has(> .size-full > .p-multiselect) { container-type: size; }
+@container (max-height: ${PICKS_HEIGHT + 2}px) {
+    .p-multiselect { height: 100%; align-items: center; font-size: 12px; border-radius: ${PICKS_HEIGHT / 2}px; }
+    .p-multiselect-label { padding: 0 10px; line-height: ${PICKS_HEIGHT}px; }
+    .p-multiselect-dropdown { width: 24px; }
+    .p-multiselect-dropdown svg { width: 10px; height: 10px; }
+}`;
+document.head.appendChild(style);
 const restored = new WeakSet();
 const prepared = new WeakSet();
 
@@ -20,22 +33,26 @@ function picks(node) {
 }
 
 function preparePicks(node) {
-    let grew = false;
+    let changed = false, fresh = false;
     for (const widget of picks(node)) {
         if (prepared.has(widget)) {
             continue;
         }
         prepared.add(widget);
-        // a wider margin leaves room above the list for its name; the list keeps its usual 36 px
         widget.options.margin = PICKS_MARGIN;
-        widget.options.getMinHeight = () => 36 + 2 * PICKS_MARGIN;
-        if (!restored.has(widget) && !widget.value?.length && widget.inputSpec.default?.length) {
-            widget.value = [...widget.inputSpec.default];
+        widget.options.getMinHeight = widget.options.getMaxHeight = () => PICKS_HEIGHT + 2 * PICKS_MARGIN;
+        if (!restored.has(widget)) {
+            fresh = true;
+            if (!widget.value?.length && widget.inputSpec.default?.length) {
+                widget.value = [...widget.inputSpec.default];
+            }
         }
-        grew = true;
+        changed = true;
     }
-    if (grew) {
-        node.setSize([node.size[0], Math.max(node.size[1], node.computeSize()[1])]);
+    // new lists fit the node to its content; a loaded node keeps its saved size unless it is too small
+    if (changed) {
+        const height = node.computeSize()[1];
+        node.setSize([node.size[0], fresh ? height : Math.max(node.size[1], height)]);
     }
 }
 
@@ -45,7 +62,7 @@ function drawPickLabels(node, ctx) {
     ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--descrip-text").trim() || "#999";
     for (const widget of picks(node)) {
         if (node.isWidgetVisible?.(widget) !== false && widget.y) {
-            ctx.fillText(widget.name.replace("role.", "").replaceAll("_", " "), PICKS_MARGIN + 4, widget.y + 12);
+            ctx.fillText(widget.name.replace("role.", "").replaceAll("_", " "), PICKS_MARGIN + 4, widget.y + 10);
         }
     }
     ctx.restore();
