@@ -25,13 +25,14 @@ def common_inputs(name_tip, description_tip):
     return [
         io.String.Input("name", default="", tooltip=name_tip),
         io.String.Input("description", multiline=True, default="", tooltip=description_tip),
-        io.String.Input("retained", multiline=True, default="", advanced=True,
-                        tooltip="Optional: what the video keeps from this reference, for the retention line. Empty writes a default for the role."),
+        io.String.Input("what_is_kept", multiline=True, default="",
+                        tooltip="What the video keeps from this reference, and what changes. Leave empty for fully_preserved; "
+                                "fill it in for partial, transfer or weak, e.g. 'her face and hair are kept, but she wears a red coat'."),
     ]
 
 
-def reference(kind, data, name, description, retained, role, **extra):
-    return io.NodeOutput({"kind": kind, "data": data, "name": name, "description": description, "retained": retained,
+def reference(kind, data, name, description, what_is_kept, role, **extra):
+    return io.NodeOutput({"kind": kind, "data": data, "name": name, "description": description, "what_is_kept": what_is_kept,
                           "role": role["role"], "keep": role["keep"], "shots": role.get("shots", ""),
                           "speaker": role.get("speaker", ""), **extra})
 
@@ -64,8 +65,8 @@ class H3ImageReference(io.ComfyNode):
         )
 
     @classmethod
-    def execute(cls, image, name, description, retained, role) -> io.NodeOutput:
-        return reference("image", image, name, description, retained, role)
+    def execute(cls, image, name, description, what_is_kept, role) -> io.NodeOutput:
+        return reference("image", image, name, description, what_is_kept, role)
 
 
 class H3VideoReference(io.ComfyNode):
@@ -96,8 +97,8 @@ class H3VideoReference(io.ComfyNode):
         )
 
     @classmethod
-    def execute(cls, video, soundtrack_keep, name, description, retained, role, soundtrack=None) -> io.NodeOutput:
-        return reference("video", video, name, description, retained, role,
+    def execute(cls, video, soundtrack_keep, name, description, what_is_kept, role, soundtrack=None) -> io.NodeOutput:
+        return reference("video", video, name, description, what_is_kept, role,
                          audio=soundtrack, soundtrack=soundtrack_keep if soundtrack is not None else None)
 
 
@@ -124,8 +125,8 @@ class H3AudioReference(io.ComfyNode):
         )
 
     @classmethod
-    def execute(cls, audio, name, description, retained, role) -> io.NodeOutput:
-        return reference("audio", audio, name, description, retained, role)
+    def execute(cls, audio, name, description, what_is_kept, role) -> io.NodeOutput:
+        return reference("audio", audio, name, description, what_is_kept, role)
 
 
 class H3Ref2VAPrompt(io.ComfyNode):

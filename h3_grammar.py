@@ -55,6 +55,9 @@ ASSET_ASPECTS = {
     "continue from": "the subjects, setting and motion at the end of the source video",
 }
 
+# markers whose default retention line can't say what is kept or what changes
+VAGUE_MARKERS = {"partially_preserved", "attribute_transfer", "weak_reference", "partially_copy"}
+
 VISUAL_NOTES = {
     "fully_preserved": "{} are retained.",
     "partially_preserved": "{} are partly retained.",
@@ -296,7 +299,7 @@ def _label_refs(refs, issues):
         if e["kind"] == "video" and e.get("soundtrack"):
             counts["audio"] += 1
             entries.append({"kind": "audio", "role": "soundtrack", "name": e["name"] + "_audio", "description": "",
-                            "retained": "", "keep": e["soundtrack"], "video": e["label"],
+                            "what_is_kept": "", "keep": e["soundtrack"], "video": e["label"],
                             "label": f"<Audio {counts['audio']}>"})
     for r in refs:
         if r["kind"] == "audio":
@@ -352,7 +355,7 @@ def _parse_shots(raw):
 
 
 def compile_prompt(refs, summary: str, shots: str, soundscape: str, music: str, language: str = "English"):
-    """refs: dicts with kind (image/video/audio), role, name, description, retained, keep, and per role
+    """refs: dicts with kind (image/video/audio), role, name, description, what_is_kept, keep, and per role
     shots (staging layout), speaker (voice) or soundtrack (video soundtrack marker, or None).
     Returns (prompt_text, [Issue], legend lines)."""
     issues = []
@@ -394,7 +397,12 @@ def compile_prompt(refs, summary: str, shots: str, soundscape: str, music: str, 
         dd_lines.append(f"[Shot {i}] {stamp}{body}")
 
     def notes(e, default):
-        return ctx.expand(_one_line(e["retained"]), "retention_analysis") if e["retained"].strip() else default
+        if e["what_is_kept"].strip():
+            return ctx.expand(_one_line(e["what_is_kept"]), "retention_analysis")
+        if e["keep"] in VAGUE_MARKERS and not (e["kind"] == "audio" and e["keep"] == "weak_reference"):
+            issues.append(Issue(WARN, "retention_analysis", f"'{e['name']}' is {e['keep']} but what_is_kept is empty, so "
+                                                            f"the line only says '{default}' Say what is kept and what changes."))
+        return default
 
     def desc(e, section="subject_definitions"):
         return ctx.expand(_one_line(e["description"]).rstrip("."), section)

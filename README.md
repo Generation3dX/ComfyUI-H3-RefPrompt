@@ -23,6 +23,7 @@ Each reference node has these fields:
 - `name`: what you write as `@name` in the text.
 - `description`: a noun phrase, such as *the young woman with long dark hair and a blue cardigan*.
 - `keep`: the retention marker. It defaults to a sensible value for each role.
+- `what_is_kept`: what the video keeps from the reference, and what changes. Leave it empty for `fully_preserved`. For `partially_preserved`, `attribute_transfer` or `weak_reference`, write it out, e.g. *her face and hair are kept, but she wears a red coat*. If it's empty, the report gives a warning.
 
 References with a subject role that share a name merge into one subject. For example, two images of the same dog become `<Subject 2> … as shown in <Picture 2> and <Picture 3>`.
 

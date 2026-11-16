@@ -6,9 +6,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from h3_grammar import ERROR, WARN, compile_prompt, lint
 
 
-def ref(kind, role, name, description="", keep=None, retained="", shots="", speaker="", soundtrack=None):
+def ref(kind, role, name, description="", keep=None, what_is_kept="", shots="", speaker="", soundtrack=None):
     keep = keep or ("reference" if kind == "audio" else "fully_preserved")
-    return dict(kind=kind, role=role, name=name, description=description, retained=retained, keep=keep, shots=shots,
+    return dict(kind=kind, role=role, name=name, description=description, what_is_kept=what_is_kept, keep=keep, shots=shots,
                 speaker=speaker, soundtrack=soundtrack, audio=None, data=None)
 
 
@@ -58,7 +58,7 @@ def check(name, cond, detail=""):
 # 1. references compile cleanly
 text, issues = build()
 OFFICIAL = text
-check("compile has no issues", not issues, issues)
+check("compile has no errors", not levels(issues, ERROR), issues)
 check("subjects numbered in reference order, assets per type",
       "<Subject 2> is the workshop interior with a kick wheel, shelves of unfired bowls and a small window, as shown in <Picture 2> and <Picture 3>." in text
       and "<Subject 3> is the young apprentice with a dark braid and a rust-red apron, whose appearance comes from <Video 1>." in text, text)
@@ -186,11 +186,11 @@ check("@name_audio for soundtracks", "<Audio 1>" in build(refs=[ref("video", "ca
 
 t, ci = build(shots=SHOTS + "\n>> 6 the shot cuts to black as a narrator (s:narrator) says in an off-screen voiceover: {{Fin.}}",
               refs=REFS + [ref("audio", "voice", "nv", speaker="narrator")])
-check("subject-less speaker gets next ID and voice", "narrator (S3) says" in t and "for the narrator (S3)." in t and not ci, ci)
+check("subject-less speaker gets next ID and voice", "narrator (S3) says" in t and "for the narrator (S3)." in t and not levels(ci, ERROR), ci)
 t, ci = build(shots=SHOTS.replace("{{I have", "{{French| I have"))
 check("per-line language override", "<d>[French] I have not" in t)
-t, ci = build(refs=[dict(r, retained="her braid and apron @girl" if r["name"] == "girl" else "") for r in REFS])
-check("retained override is expanded", "fully_preserved - her braid and apron <Subject 3>" in t, t)
+t, ci = build(refs=[dict(r, what_is_kept="her braid and apron @girl" if r["name"] == "girl" else "") for r in REFS])
+check("what_is_kept is expanded", "fully_preserved - her braid and apron <Subject 3>" in t, t)
 
 # 6. speakers worked out from the sentence
 JONI = [ref("image", "character", "joni", "the young teacher with a blonde fringe"),
