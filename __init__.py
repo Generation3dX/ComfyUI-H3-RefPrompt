@@ -4,6 +4,8 @@ from comfy_api.latest import ComfyExtension, io
 
 from .nodes import H3AudioReference, H3ImageReference, H3Ref2VAPrompt, H3VideoReference
 
+WEB_DIRECTORY = "./web"
+
 
 class H3RefPromptExtension(ComfyExtension):
     @override
