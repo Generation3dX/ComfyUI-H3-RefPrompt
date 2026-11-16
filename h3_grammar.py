@@ -112,6 +112,9 @@ _HEADER_RE = re.compile(r"(?m)^(" + "|".join(SECTIONS) + r"):")
 _SHOT_RE = re.compile(r"\[Shot ([1-9]\d*)\]")
 _TS_RE = re.compile(r" At (\d\d):(\d\d)\.(\d\d\d), ")
 _NAME_RE = re.compile(r"[A-Za-z_]\w*")
+# shot text tokens; a sentence ends at . ! or ? followed by a space, outside {{...}}
+_TOKEN_RE = re.compile(r"\(s:(?P<spk>[\w ,]+)\)|@(?P<name>[A-Za-z_]\w*)(?P<s>\(s\))?|\{\{(?P<line>.*?)\}\}|(?P<end>[.!?])(?=\s|$)",
+                       flags=re.I | re.S)
 
 
 @dataclass
@@ -184,8 +187,9 @@ def _shot_list(nums):
 # --------------------------------------------------------------------------
 
 class _Ctx:
-    def __init__(self, language: str, names: dict, issues: list):
+    def __init__(self, language: str, names: dict, issues: list, cues=()):
         self.names = names     # lowercase name -> label
+        self.cues = set(cues)  # labels of reused tracks whose verbal cues have no speaker
         self.speakers = {}     # lowercase key -> number
         self.language = language.strip() or "English"
         self.issues = issues
@@ -212,39 +216,68 @@ class _Ctx:
         return self.speakers[key]
 
     def expand(self, text: str, section: str, assign: bool = False, dialogue: bool = False) -> str:
-        def tok(m):
-            if m.group("spk") is not None:  # (s:key) or (s:a,b)
-                nums = [self.speaker(k.strip(), section, assign) for k in m.group("spk").split(",")]
-                if None in nums:
-                    return m.group(0)
-                return "(" + ",".join(f"S{n}" for n in nums) + ")"
-            name, speaks = m.group("name"), m.group("s")
-            lab = self.label(name, section)
-            if lab is None:
-                return m.group(0)
-            if speaks:
-                if not lab.startswith("<Subject"):
-                    self.err(section, f"'@{name}(s)': only subjects can speak. For a voice with no subject "
-                                      "use '(s:somename)'.")
-                    return lab
-                n = self.speaker(name, section, assign)
-                return f"{lab} (S{n})" if n else lab
-            return lab
-
-        out = re.sub(r"\(s:(?P<spk>[\w ,]+)\)|@(?P<name>[A-Za-z_]\w*)(?P<s>\(s\))?", tok, text, flags=re.I)
-
-        def dlg(m):
-            body = m.group(1).strip()
-            lang = self.language
-            lm = re.match(r"([A-Za-z][A-Za-z \-]{1,30})\|\s*", body)
-            if lm:
-                lang, body = lm.group(1).strip(), body[lm.end():]
-            if not dialogue:
-                self.err(section, "dialogue {{...}} is only allowed in the shots; the spec forbids repeating "
-                                  "spoken lines in other sections.")
-            return f"<d>[{lang}] {body}</d>"
-
-        return re.sub(r"\{\{(.*?)\}\}", dlg, out, flags=re.S)
+        """Expands @name, @name(s), (s:key) and {{line}}. In the shots, a line's speaker is the one subject
+        named before it in the same sentence, unless @name(s) or (s:key) says who it is."""
+        pieces = []
+        mentions = []      # (piece index, key) of subjects named since the sentence start or the last line
+        marked = False     # @name(s) or (s:key) since the sentence start or the last line
+        spoken = False     # a line in this sentence already has a speaker
+        cue = False        # a music or soundtrack <Audio N> is named before the line: a cue inside it has no speaker
+        pos = 0
+        for m in _TOKEN_RE.finditer(text):
+            pieces.append(text[pos:m.start()])
+            pos = m.end()
+            if m["end"]:
+                pieces.append(m["end"])
+                mentions, marked, spoken, cue = [], False, False, False
+            elif m["line"] is not None:
+                body = m["line"].strip()
+                if not dialogue:
+                    self.err(section, "dialogue {{...}} is only allowed in the shots; the spec forbids repeating "
+                                      "spoken lines in other sections.")
+                elif not marked and not cue:
+                    keys = list(dict.fromkeys(k for _, k in mentions))
+                    if len(keys) == 1:
+                        n = self.speaker(keys[0], section, assign)
+                        pieces[max(i for i, k in mentions if k == keys[0])] += f" (S{n})"
+                    elif keys:
+                        self.err(section, f"who says '{body[:40]}'? {', '.join('@' + k for k in keys)} are all named "
+                                          "before it; mark the speaker with @name(s).")
+                    elif not spoken:
+                        self.err(section, f"who says '{body[:40]}'? Name the speaker in the same sentence, e.g. "
+                                          "'@joni says {{...}}', or for someone without a reference, "
+                                          "'a child (s:child) says {{...}}'.")
+                lang = self.language
+                lm = re.match(r"([A-Za-z][A-Za-z \-]{1,30})\|\s*", body)
+                if lm:
+                    lang, body = lm.group(1).strip(), body[lm.end():]
+                pieces.append(f"<d>[{lang}] {body}</d>")
+                mentions, marked, spoken, cue = [], False, True, False
+            elif m["spk"] is not None:  # (s:key) or (s:a,b)
+                nums = [self.speaker(k.strip(), section, assign) for k in m["spk"].split(",")]
+                pieces.append(m.group(0) if None in nums else "(" + ",".join(f"S{n}" for n in nums) + ")")
+                marked = True
+            else:
+                name = m["name"]
+                lab = self.label(name, section)
+                if lab is None:
+                    pieces.append(m.group(0))
+                elif m["s"]:
+                    if not lab.startswith("<Subject"):
+                        self.err(section, f"'@{name}(s)': only subjects can speak. For a voice with no subject "
+                                          "use '(s:somename)'.")
+                        pieces.append(lab)
+                    else:
+                        n = self.speaker(name, section, assign)
+                        pieces.append(f"{lab} (S{n})" if n else lab)
+                        marked = True
+                else:
+                    pieces.append(lab)
+                    if lab.startswith("<Subject"):
+                        mentions.append((len(pieces) - 1, name.lower()))
+                    cue = cue or lab in self.cues
+        pieces.append(text[pos:])
+        return "".join(pieces)
 
 
 def _label_refs(refs, issues):
@@ -324,7 +357,7 @@ def compile_prompt(refs, summary: str, shots: str, soundscape: str, music: str, 
     Returns (prompt_text, [Issue], legend lines)."""
     issues = []
     subjects, assets, names = _label_refs(refs, issues)
-    ctx = _Ctx(language, names, issues)
+    ctx = _Ctx(language, names, issues, [a["label"] for a in assets if a["kind"] == "audio" and a["role"] != "voice"])
     raw = {k: _strip_comments(v) for k, v in dict(summary=summary, shots=shots, soundscape=soundscape, music=music).items()}
 
     # ---- detailed_description (assigns speaker numbers in order of vocal events) ----

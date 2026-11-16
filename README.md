@@ -38,14 +38,16 @@ From the roles, the node writes:
 | You write | It becomes |
 | --- | --- |
 | `@anna` | `<Subject 1>`, or `<Picture N>` / `<Video N>` / `<Audio N>` for non-subject roles |
-| `@anna(s)` | `<Subject 1> (S1)`. Speaker numbers follow the order in which people first speak. |
-| `(s:narrator)` | `(S2)`: a voice that isn't a subject |
-| `{{Hello there.}}` | `<d>[English] Hello there.</d>` |
+| `@anna says {{Hello there.}}` | `<Subject 1> (S1) says <d>[English] Hello there.</d>`. The one subject named before a line in the same sentence speaks it. Speaker numbers follow the order in which people first speak. |
+| `@anna(s)` | `<Subject 1> (S1)`. Marks the speaker when several subjects are named before the line. |
+| `a child (s:child) says {{Hi!}}` | `a child (S2) says <d>[English] Hi!</d>`: a voice that isn't a reference |
 | `{{French\| Bonjour.}}` | `<d>[French] Bonjour.</d>` |
 | `>>` at the start of a line | `[Shot 1]` |
 | `>> 3.5` at the start of a line | `[Shot 2] At 00:03.500, ` |
 | `@clip_audio` | the soundtrack of the video reference named `clip` |
 | `// note` at the start of a line | removed |
+
+A line after a music reference or a soundtrack, with no speaker named, is a cue inside that audio and gets no speaker: *@joni nods along as @song reaches {{Stay with me.}}*
 
 In `shots`, put the style sentence first, then one `>>` per shot. Line breaks inside a shot are allowed. After `>> 3.5`, start with a cut phrase, such as *the shot cuts to …*.
 
@@ -63,9 +65,9 @@ summary
 shots
 ```
 Realistic sitcom style with warm indoor lighting.
->> A medium shot establishes @cafe. @anna(s) sits on the sofa and says,
+>> A medium shot establishes @cafe. @anna sits on the sofa and says,
    {{Hey! Watch your dog!}}
->> 3.0 the shot cuts to a close-up of @anna(s). She replies, {{Well, he has good taste.}}
+>> 3.0 the shot cuts to a close-up of @anna, who replies, {{Well, he has good taste.}}
 ```
 
 The `report` output lists every problem and the `@name` → label mapping. Wire it into a Preview Any node. With `strict` on (an advanced input, on by default), any error stops the run before sampling.
@@ -76,6 +78,7 @@ These errors stop the run:
 - unknown `@names`;
 - unnamed or duplicate references;
 - subjects without a description, or never shown in a shot;
+- a spoken line with no speaker, or with several subjects before it and none marked with `(s)`;
 - a voice whose speaker never speaks;
 - missing or unordered cut times, or cut times past the video's length;
 - unclosed `{{`;

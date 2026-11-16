@@ -192,5 +192,35 @@ check("per-line language override", "<d>[French] I have not" in t)
 t, ci = build(refs=[dict(r, retained="her braid and apron @girl" if r["name"] == "girl" else "") for r in REFS])
 check("retained override is expanded", "fully_preserved - her braid and apron <Subject 3>" in t, t)
 
+# 6. speakers worked out from the sentence
+JONI = [ref("image", "character", "joni", "the young teacher with a blonde fringe"),
+        ref("image", "character", "ben", "the boy in a school jumper"),
+        ref("audio", "voice", "joni_voice", speaker="joni"),
+        ref("audio", "music", "song", keep="fully_copy")]
+
+
+def joni(shots):
+    t, ci = build(refs=JONI, summary="@joni meets @ben.", shots="Film style.\n" + shots, soundscape="")
+    return t.split("detailed_description:\n")[1].split("\n\n")[0], levels(ci, ERROR)
+
+
+t, e = joni(">> @Joni walks in. A child (s:child) says {{Miss! How old are you?}}\n@Joni says {{Far too old.}} @ben laughs.")
+check("one subject in the sentence speaks", "<Subject 1> (S2) says <d>[English] Far too old.</d>" in t and "A child (S1) says" in t and not e, (t, e))
+t, e = joni(">> @Joni walks in. A child says {{Miss!}}")
+check("no speaker in the sentence: error, not the earlier subject", e and "(S" not in t, (t, e))
+t, e = joni(">> @joni hands @ben a cup and says {{Here.}}")
+check("two subjects before the line: error", bool(e), (t, e))
+t, e = joni(">> @joni(s) hands @ben a cup and says {{Here.}}")
+check("@name(s) picks the speaker", "<Subject 1> (S1) hands <Subject 2> a cup" in t and not e, (t, e))
+t, e = joni(">> @joni says {{Hello}} and @ben replies {{Hi.}}")
+check("two speakers in one sentence", "<Subject 1> (S1) says" in t and "<Subject 2> (S2) replies" in t and not e, (t, e))
+t, e = joni(">> @joni says {{Hello.}} to @ben and then {{Goodbye.}}")
+check("a second line in the same sentence keeps its speaker", not e, (t, e))
+t, e = joni(">> @joni nods along to @song as it reaches {{Stay with me.}} @ben claps. @joni, in the voice from @joni_voice, says {{Bravo.}}")
+check("a cue inside reused music has no speaker", not e and "<Subject 1> nods" in t, (t, e))
+check("a voice reference doesn't make the line a cue", "<Subject 1> (S1), in the voice from <Audio 1>, says" in t, t)
+t, e = joni(">> @joni(s) says {{Hello.}} @ben says {{Hi!}}")
+check("explicit and automatic speakers mix", "<Subject 2> (S2) says" in t and not e, (t, e))
+
 print("\n%d failure(s)" % fails)
 sys.exit(1 if fails else 0)

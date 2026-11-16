@@ -147,11 +147,12 @@ class H3Ref2VAPrompt(io.ComfyNode):
                                 tooltip="One paragraph on what happens, using @names. The [task type] prefix is added for you."),
                 io.String.Input("shots", multiline=True, default="",
                                 placeholder="Realistic sitcom style with warm indoor lighting.\n"
-                                            ">> A medium shot establishes @cafe. @anna(s) sits on the sofa and says,\n"
+                                            ">> A medium shot establishes @cafe. @anna sits on the sofa and says,\n"
                                             "   {{Hey! Watch your dog!}}\n"
-                                            ">> 3.0 the shot cuts to a close-up of @anna(s). She replies, {{Well, he has good taste.}}",
-                                tooltip="Style sentence first, then one '>>' per shot ('>> 3.5' = cut at 3.5 s). @name = a reference, "
-                                        "@name(s) = that subject speaking, (s:narrator) = a voice with no subject, {{...}} = spoken line."),
+                                            ">> 3.0 the shot cuts to a close-up of @anna, who replies, {{Well, he has good taste.}}",
+                                tooltip="Style sentence first, then one '>>' per shot ('>> 3.5' = cut at 3.5 s). @name = a reference. "
+                                        "{{...}} = a spoken line, said by the one @name before it in the sentence. @name(s) picks the speaker "
+                                        "when several are named; 'a child (s:child) says' = a voice with no reference."),
                 io.String.Input("soundscape", multiline=True, default="", tooltip="Ambience and physical sounds. Empty = N/A (silence)."),
                 io.String.Input("music", multiline=True, default="", tooltip="Audience-only score. Empty = N/A."),
                 io.String.Input("language", default="English", tooltip="Default language tag for {{...}} dialogue."),
