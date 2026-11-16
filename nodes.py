@@ -2,6 +2,7 @@ import logging
 
 import nodes
 from comfy_api.latest import io
+from comfy_execution.graph_utils import ExecutionBlocker
 from comfy_extras.nodes_minimax_h3 import FPS, MiniMaxH3ReferenceToVideo, align_frame_count
 
 from .h3_grammar import APPEARANCE, AUDIO_MARKERS, ERROR, IMAGE_ASPECTS, VIDEO_ASPECTS, VISUAL_MARKERS, Result, compile_prompt, lint
@@ -178,7 +179,8 @@ class H3Ref2VAPrompt(io.ComfyNode):
                 io.Int.Input("length", default=124, min=5, max=3600, step=17, tooltip="Frame count at 24 fps (124 = ~5 s, trained range ~124-362)."),
                 io.Combo.Input("ref_image_size", options=["match", "max"], default="match", advanced=True,
                                tooltip="As in MiniMax H3 Reference to Video: 'max' keeps reference images at up to 2048 px for identity, but is slower."),
-                io.Boolean.Input("strict", default=True, advanced=True, tooltip="Stop the run on any prompt error instead of sampling a broken prompt."),
+                io.Boolean.Input("strict", default=True, advanced=True, tooltip="On any prompt error, stop before sampling instead of sampling a broken prompt. "
+                                                                                       "The prompt and report outputs still run."),
             ],
             outputs=[io.Conditioning.Output(display_name="positive"), io.Latent.Output(), io.String.Output(display_name="prompt"),
                      io.String.Output(display_name="report")],
@@ -198,8 +200,10 @@ class H3Ref2VAPrompt(io.ComfyNode):
         report = res.report()
         logging.info("H3 Ref2VA Prompt:\n%s\n\n%s", text, report)
         if strict and res.errors:
-            raise ValueError("H3 Ref2VA Prompt: the prompt has errors, so the run was stopped before sampling.\n\n"
-                             + "\n".join(str(i) for i in res.errors))
+            # block only the sampling side, so the prompt and report still reach their display nodes
+            message = ("H3 Ref2VA Prompt: the prompt has errors, so the run was stopped before sampling. "
+                       "See the report output.\n\n" + "\n".join(str(i) for i in res.errors))
+            return io.NodeOutput(ExecutionBlocker(message), ExecutionBlocker(None), text, report)
         if n_audio and audio_vae is None:
             raise ValueError("H3 Ref2VA Prompt: connect audio_vae to use audio references or soundtracks.")
 
