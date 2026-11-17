@@ -550,6 +550,9 @@ def compile_prompt(refs, summary: str, shots: str, soundscape: str, music: str, 
                 who_id = f"{who} (S{n})" if n else who
             if keep in ("fully_copy", "partially_copy"):
                 definition = f"{lab} is the spoken audio of {who_id}{AUDIO_USE[keep]}{voiced}."
+                issues.append(Issue(WARN, "references", f"the voice '{e['name']}' is {keep}: the recording itself is played "
+                                    "in the video, so the speaker keeps talking for as long as it lasts, whatever the shots "
+                                    "say. To give the speaker only this voice for your own lines, set keep to reference."))
             else:
                 definition = f"{lab} is the voice-timbre reference for {who_id}{voiced}."
             default = AUDIO_NOTES["voice"][keep].format(a=lab, who=who)
