@@ -195,7 +195,9 @@ class H3Ref2VAPrompt(io.ComfyNode):
         videos = [r for r in refs if r["kind"] == "video"]
         audios = [r for r in refs if r["kind"] == "audio"]
         n_audio = len(audios) + sum(r["audio"] is not None for r in videos)
-        issues += lint(text, align_frame_count(max(5, length)) / FPS, len(images), len(videos), n_audio)
+        # the final check only repeats the input errors in other words, so it runs once those are fixed
+        if not any(i.level == ERROR for i in issues):
+            issues += lint(text, align_frame_count(max(5, length)) / FPS, len(images), len(videos), n_audio)
         res = Result(text, issues, legend)
         report = res.report()
         logging.info("H3 Ref2VA Prompt:\n%s\n\n%s", text, report)

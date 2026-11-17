@@ -239,7 +239,7 @@ check("layout picks name the subjects and keep what_is_kept",
       "partially_preserved - the subject positions and camera angle are kept; the subjects' clothing is not taken from "
       "<Picture 2>; each subject looks as its own reference shows; she wears pyjamas, not the nightie." in t, t)
 t, i = build(refs=[BED[0], picked(BED[1], ["camera angle"], []) | {"what_is_kept": ""}], summary="@joni wakes.",
-             shots="Realistic.\n>> @joni sleeps in @bed.", soundscape="")
+             shots="Realistic.\n>> @joni sleeps in her bed.", soundscape="")
 check("picks stop the empty what_is_kept warning", not levels(i, WARN), i)
 t, i = build(refs=[ref("image", "character", "Anna", "Anna Berg, a tall woman")], summary="@anna waves.",
              shots="Real.\n>> @anna waves.", soundscape="")

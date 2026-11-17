@@ -43,6 +43,12 @@ SUBJECT_ROLES = {
     ("video", "character"): ("whose appearance comes from", "the identity and appearance"),
     ("video", "motion"): ("whose motion comes from", "the movement and its timing"),
 }
+# references that are a whole picture, and what the node already writes for them
+FRAME_ROLES = {
+    "first frame": "The shot already begins from it without the @.",
+    "last frame": "The shot already ends on it without the @.",
+    "staging layout": "Its shots already follow it without the @.",
+}
 # subjects that need no tag in the shots: they apply to every shot unless tagged in some
 EVERY_SHOT_ROLES = {"environment", "style"}
 
@@ -203,6 +209,7 @@ class _Ctx:
     def __init__(self, language: str, names: dict, issues: list, cues=(), roles=None):
         self.names = names     # lowercase name -> label
         self.roles = roles or {}  # lowercase name -> role, for references that aren't subjects
+        self.flagged = set()      # (name, section) already warned about by frame_in_text
         self.cues = set(cues)  # labels of reused tracks whose verbal cues have no speaker
         self.speakers = {}     # lowercase key -> number
         self.language = language.strip() or "English"
@@ -222,6 +229,16 @@ class _Ctx:
     def not_a_speaker(self, key):
         return (f"@{key} is a {self.roles[key]} reference, not a character, so it can't speak. Set its role to "
                 f"character, or connect the same image again as a character with its own name and use that name.")
+
+    def frame_in_text(self, key, section):
+        # a frame or layout stands for a whole picture; written into the story it reads as a person or a place
+        role = self.roles[key]
+        if role in FRAME_ROLES and section in ("summary", "detailed_description") and (key, section) not in self.flagged:
+            self.flagged.add((key, section))
+            self.issues.append(Issue(WARN, section, f"@{key} is a {role} reference, so it becomes {self.names[key]}, the "
+                                     f"whole picture, not a person or a place in it. If it shows a character or a "
+                                     f"location, set its role to character or environment; otherwise drop the @ and "
+                                     f"describe it in words. {FRAME_ROLES[role]}"))
 
     def speaker(self, key: str, section: str, assign: bool):
         key = key.lower()
@@ -298,6 +315,7 @@ class _Ctx:
                         mentions.append((len(pieces) - 1, name.lower()))
                     elif name.lower() in self.roles:
                         others.append(name.lower())
+                        self.frame_in_text(name.lower(), section)
                     cue = cue or lab in self.cues
         pieces.append(text[pos:])
         return "".join(pieces)
