@@ -221,6 +221,8 @@ check("a cue inside reused music has no speaker", not e and "<Subject 1> nods" i
 check("a voice reference doesn't make the line a cue", "<Subject 1> (S1), in the voice from <Audio 1>, says" in t, t)
 t, e = joni(">> @joni(s) says {{Hello.}} @ben says {{Hi!}}")
 check("explicit and automatic speakers mix", "<Subject 2> (S2) says" in t and not e, (t, e))
+t, e = joni(">> @joni says {{Good morning class!}}. The children {s:children} say: {{Good morning Miss Macleod!}} @ben[s] says {{Hi.}}")
+check("curly and square speaker marks work", "The children (S2) say: <d>" in t and "<Subject 2> (S3) says" in t and not e, (t, e))
 
 # 7. keep_these / ignore_these and descriptions
 def picked(r, kept, ignored):

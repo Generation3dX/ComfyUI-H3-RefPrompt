@@ -46,7 +46,7 @@ From the roles, the node writes:
 | `@anna` | `<Subject 1>`, or `<Picture N>` / `<Video N>` / `<Audio N>` for non-subject roles |
 | `@anna says {{Hello there.}}` | `<Subject 1> (S1) says <d>[English] Hello there.</d>`. The one subject named before a line in the same sentence speaks it. Speaker numbers follow the order in which people first speak. |
 | `@anna(s)` | `<Subject 1> (S1)`. Marks the speaker when several subjects are named before the line. |
-| `a child (s:child) says {{Hi!}}` | `a child (S2) says <d>[English] Hi!</d>`: a voice that isn't a reference |
+| `a child (s:child) says {{Hi!}}` | `a child (S2) says <d>[English] Hi!</d>`: a voice that isn't a reference. Any brackets work: `{s:child}`, `[s:child]`, `@anna[s]`. |
 | `{{French\| Bonjour.}}` | `<d>[French] Bonjour.</d>` |
 | `>>` at the start of a line | `[Shot 1]` |
 | `>> 3.5` at the start of a line | `[Shot 2] At 00:03.500, ` |

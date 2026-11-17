@@ -123,8 +123,10 @@ _HEADER_RE = re.compile(r"(?m)^(" + "|".join(SECTIONS) + r"):")
 _SHOT_RE = re.compile(r"\[Shot ([1-9]\d*)\]")
 _TS_RE = re.compile(r" At (\d\d):(\d\d)\.(\d\d\d), ")
 _NAME_RE = re.compile(r"[A-Za-z_]\w*")
-# shot text tokens; a sentence ends at . ! or ? followed by a space, outside {{...}}
-_TOKEN_RE = re.compile(r"\(s:(?P<spk>[\w ,]+)\)|@(?P<name>[A-Za-z_]\w*)(?P<s>\(s\))?|\{\{(?P<line>.*?)\}\}|(?P<end>[.!?])(?=\s|$)",
+# shot text tokens; a sentence ends at . ! or ? followed by a space, outside {{...}}.
+# Speaker marks take any bracket, so {s:child} and [s] work as well as (s:child) and (s).
+_TOKEN_RE = re.compile(r"[({\[]\s*s\s*:(?P<spk>[\w ,]+)[)}\]]|@(?P<name>[A-Za-z_]\w*)(?P<s>[({\[]s[)}\]])?"
+                       r"|\{\{(?P<line>.*?)\}\}|(?P<end>[.!?])(?=\s|$)",
                        flags=re.I | re.S)
 
 
