@@ -27,7 +27,7 @@ H3 Audio Reference ─┘                    ├─► prompt ─► Preview Any
 
 Always wire `report` into a Preview Any node: that's where problems are explained.
 
-A ready-made workflow is in [example_workflows/](example_workflows/H3-Ref2VA-Prompt-Builder.json). It's core's MiniMax H3 R2V template with this pack's nodes, set up with the example below; it also appears under this pack in ComfyUI's template browser. Load your own images and voice clip into its three loaders.
+A ready-made workflow is in [example_workflows/](example_workflows/H3-Ref2VA-Prompt-Builder.json), set up with the example below. It also appears under this pack in ComfyUI's template browser. It samples in two stages: a fast low-resolution pass, a latent upscale, then a short refining pass at full size. The upscale needs [Comfyui_Minimax_h3_latent_Upscaler](https://github.com/LBH-123-AI/Comfyui_Minimax_h3_latent_Upscaler). Model links are in the workflow's notes. Load your own images and voice clip into its three loaders.
 
 ## Step 1: the reference nodes
 
