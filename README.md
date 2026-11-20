@@ -27,6 +27,8 @@ H3 Audio Reference ─┘                    ├─► prompt ─► Preview Any
 
 Always wire `report` into a Preview Any node: that's where problems are explained.
 
+A ready-made workflow is in [example_workflows/](example_workflows/H3-Ref2VA-Prompt-Builder.json). It's core's MiniMax H3 R2V template with this pack's nodes, set up with the example below; it also appears under this pack in ComfyUI's template browser. Load your own images and voice clip into its three loaders.
+
 ## Step 1: the reference nodes
 
 There is one node per media type. Every reference gets:
