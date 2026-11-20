@@ -193,53 +193,53 @@ t, ci = build(refs=[dict(r, what_is_kept="her braid and apron @girl" if r["name"
 check("what_is_kept is expanded", "fully_preserved - her braid and apron <Subject 3>" in t, t)
 
 # 6. speakers worked out from the sentence
-JONI = [ref("image", "character", "joni", "the young teacher with a blonde fringe"),
+TEACHER = [ref("image", "character", "anna", "the young teacher with a blonde fringe"),
         ref("image", "character", "ben", "the boy in a school jumper"),
-        ref("audio", "voice", "joni_voice", speaker="joni"),
+        ref("audio", "voice", "anna_voice", speaker="anna"),
         ref("audio", "music", "song", keep="fully_copy")]
 
 
-def joni(shots):
-    t, ci = build(refs=JONI, summary="@joni meets @ben.", shots="Film style.\n" + shots, soundscape="")
+def teacher(shots):
+    t, ci = build(refs=TEACHER, summary="@anna meets @ben.", shots="Film style.\n" + shots, soundscape="")
     return t.split("detailed_description:\n")[1].split("\n\n")[0], levels(ci, ERROR)
 
 
-t, e = joni(">> @Joni walks in. A child (s:child) says {{Miss! How old are you?}}\n@Joni says {{Far too old.}} @ben laughs.")
+t, e = teacher(">> @anna walks in. A child (s:child) says {{Miss! How old are you?}}\n@anna says {{Far too old.}} @ben laughs.")
 check("one subject in the sentence speaks", "<Subject 1> (S2) says <d>[English] Far too old.</d>" in t and "A child (S1) says" in t and not e, (t, e))
-t, e = joni(">> @Joni walks in. A child says {{Miss!}}")
+t, e = teacher(">> @anna walks in. A child says {{Miss!}}")
 check("no speaker in the sentence: error, not the earlier subject", e and "(S" not in t, (t, e))
-t, e = joni(">> @joni hands @ben a cup and says {{Here.}}")
+t, e = teacher(">> @anna hands @ben a cup and says {{Here.}}")
 check("two subjects before the line: error", bool(e), (t, e))
-t, e = joni(">> @joni(s) hands @ben a cup and says {{Here.}}")
+t, e = teacher(">> @anna(s) hands @ben a cup and says {{Here.}}")
 check("@name(s) picks the speaker", "<Subject 1> (S1) hands <Subject 2> a cup" in t and not e, (t, e))
-t, e = joni(">> @joni says {{Hello}} and @ben replies {{Hi.}}")
+t, e = teacher(">> @anna says {{Hello}} and @ben replies {{Hi.}}")
 check("two speakers in one sentence", "<Subject 1> (S1) says" in t and "<Subject 2> (S2) replies" in t and not e, (t, e))
-t, e = joni(">> @joni says {{Hello.}} to @ben and then {{Goodbye.}}")
+t, e = teacher(">> @anna says {{Hello.}} to @ben and then {{Goodbye.}}")
 check("a second line in the same sentence keeps its speaker", not e, (t, e))
-t, e = joni(">> @joni nods along to @song as it reaches {{Stay with me.}} @ben claps. @joni, in the voice from @joni_voice, says {{Bravo.}}")
+t, e = teacher(">> @anna nods along to @song as it reaches {{Stay with me.}} @ben claps. @anna, in the voice from @anna_voice, says {{Bravo.}}")
 check("a cue inside reused music has no speaker", not e and "<Subject 1> nods" in t, (t, e))
 check("a voice reference doesn't make the line a cue", "<Subject 1> (S1), in the voice from <Audio 1>, says" in t, t)
-t, e = joni(">> @joni(s) says {{Hello.}} @ben says {{Hi!}}")
+t, e = teacher(">> @anna(s) says {{Hello.}} @ben says {{Hi!}}")
 check("explicit and automatic speakers mix", "<Subject 2> (S2) says" in t and not e, (t, e))
-t, e = joni(">> @joni says {{Good morning class!}}. The children {s:children} say: {{Good morning Miss Macleod!}} @ben[s] says {{Hi.}}")
+t, e = teacher(">> @anna says {{Good morning class!}}. The children {s:children} say: {{Good morning Miss Hart!}} @ben[s] says {{Hi.}}")
 check("curly and square speaker marks work", "The children (S2) say: <d>" in t and "<Subject 2> (S3) says" in t and not e, (t, e))
 
 # 7. keep_these / ignore_these and descriptions
 def picked(r, kept, ignored):
     return dict(r, keep_these=kept, ignore_these=ignored)
 
-BED = [picked(ref("image", "character", "joni", "A young woman in pink pyjamas"), ["face", "hair", "clothing"], ["background"]),
-       picked(ref("image", "staging layout", "bed", "The bedroom with @joni in bed", keep="partially_preserved", shots="1",
+BED = [picked(ref("image", "character", "anna", "A young woman in striped pyjamas"), ["face", "hair", "clothing"], ["background"]),
+       picked(ref("image", "staging layout", "bed", "The bedroom with @anna in bed", keep="partially_preserved", shots="1",
                   what_is_kept="she wears pyjamas, not the nightie."), ["subject positions", "camera angle"], ["clothing"])]
-t, i = build(refs=BED, summary="@joni wakes.", shots="Realistic.\n>> @joni sleeps in @bed.", soundscape="")
-check("description article is lower-cased", "<Subject 1> is a young woman in pink pyjamas," in t
+t, i = build(refs=BED, summary="@anna wakes.", shots="Realistic.\n>> @anna sleeps in @bed.", soundscape="")
+check("description article is lower-cased", "<Subject 1> is a young woman in striped pyjamas," in t
       and "showing the bedroom with <Subject 1> in bed." in t, t)
 check("subject picks", "fully_preserved - the face, hair and clothing are kept; the background is not taken from <Picture 1>." in t, t)
 check("layout picks name the subjects and keep what_is_kept",
       "partially_preserved - the subject positions and camera angle are kept; the subjects' clothing is not taken from "
       "<Picture 2>; each subject looks as its own reference shows; she wears pyjamas, not the nightie." in t, t)
-t, i = build(refs=[BED[0], picked(BED[1], ["camera angle"], []) | {"what_is_kept": ""}], summary="@joni wakes.",
-             shots="Realistic.\n>> @joni sleeps in her bed.", soundscape="")
+t, i = build(refs=[BED[0], picked(BED[1], ["camera angle"], []) | {"what_is_kept": ""}], summary="@anna wakes.",
+             shots="Realistic.\n>> @anna sleeps in her bed.", soundscape="")
 check("picks stop the empty what_is_kept warning", not levels(i, WARN), i)
 t, i = build(refs=[ref("image", "character", "Anna", "Anna Berg, a tall woman")], summary="@anna waves.",
              shots="Real.\n>> @anna waves.", soundscape="")

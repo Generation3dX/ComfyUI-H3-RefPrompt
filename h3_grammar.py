@@ -283,7 +283,7 @@ class _Ctx:
                         self.err(section, f"who says '{body[:40]}'? " + self.not_a_speaker(others[-1]))
                     elif not spoken:
                         self.err(section, f"who says '{body[:40]}'? Name the speaker in the same sentence, e.g. "
-                                          "'@joni says {{...}}', or for someone without a reference, "
+                                          "'@anna says {{...}}', or for someone without a reference, "
                                           "'a child (s:child) says {{...}}'.")
                 lang = self.language
                 lm = re.match(r"([A-Za-z][A-Za-z \-]{1,30})\|\s*", body)
