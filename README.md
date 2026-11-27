@@ -1,5 +1,7 @@
 # ComfyUI-H3-RefPrompt
 
+[![MiniMax H3 nodes walkthrough](https://img.youtube.com/vi/Oms37D_pug0/maxresdefault.jpg)]([https://www.youtube.com/watch?v=AbC123xYz](https://youtu.be/Oms37D_pug0))
+
 Writes MiniMax H3 **Ref2VA** (reference to video + audio) prompts for you.
 
 H3 expects a long, strictly formatted prompt with six sections and labels such as `<Subject 1>`, `<Picture 2>` and `(S1)`. Getting one detail wrong (a label, a speaker number, a missing tag) silently degrades the video. With this pack you:
